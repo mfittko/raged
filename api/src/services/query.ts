@@ -112,18 +112,20 @@ export async function query(
       // Expand entities in the graph
       const expandedEntities = await deps.expandEntities(Array.from(entityNames), 2);
       
-      // Extract unique entity names from expanded results
-      const allEntityNames = new Set([...entityNames, ...expandedEntities.map(e => e.name)]);
+      // Build a map for O(1) lookups
+      const entityMap = new Map(expandedEntities.map(e => [e.name, e]));
+      
+      // Add expanded entity names to the original set
+      for (const e of expandedEntities) {
+        entityNames.add(e.name);
+      }
       
       // Build graph data structure
       graphData = {
-        entities: Array.from(allEntityNames).map(name => {
-          const entity = expandedEntities.find(e => e.name === name);
-          return {
-            name,
-            type: entity?.type || "unknown",
-          };
-        }),
+        entities: Array.from(entityNames).map(name => ({
+          name,
+          type: entityMap.get(name)?.type || "unknown",
+        })),
         relationships: [],
       };
 

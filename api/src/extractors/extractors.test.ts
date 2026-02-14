@@ -55,6 +55,30 @@ describe("extractCode", () => {
     expect(result.exports).toContain("foo");
     expect(result.exports).toContain("bar");
   });
+
+  it("should limit function names to 100 items", () => {
+    // Generate 150 function declarations
+    const functions = Array.from({ length: 150 }, (_, i) => `function func${i}() {}`).join("\n");
+    const item: IngestItem = {
+      text: functions,
+      source: "test.js",
+    };
+    const result = extractCode(item);
+    expect(result.functions).toBeDefined();
+    expect(result.functions!.length).toBeLessThanOrEqual(100);
+  });
+
+  it("should limit class names to 100 items", () => {
+    // Generate 150 class declarations
+    const classes = Array.from({ length: 150 }, (_, i) => `class Class${i} {}`).join("\n");
+    const item: IngestItem = {
+      text: classes,
+      source: "test.ts",
+    };
+    const result = extractCode(item);
+    expect(result.classes).toBeDefined();
+    expect(result.classes!.length).toBeLessThanOrEqual(100);
+  });
 });
 
 describe("extractEmail", () => {

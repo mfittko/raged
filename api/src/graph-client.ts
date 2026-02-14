@@ -69,6 +69,7 @@ export async function expandEntities(
 
   const session = d.session();
   try {
+    // Required index: Entity.name (see task #8 for index creation)
     const query = `
       MATCH (e:Entity)
       WHERE e.name IN $entityNames
@@ -93,6 +94,7 @@ export async function getEntity(name: string): Promise<EntityDetails | null> {
 
   const session = d.session();
   try {
+    // Required index: Entity.name (see task #8 for index creation)
     const result = await session.run(
       `
       MATCH (e:Entity {name: $name})
@@ -136,6 +138,7 @@ export async function getDocumentsByEntityMention(
 
   const session = d.session();
   try {
+    // Required index: Entity.name (see task #8 for index creation)
     const result = await session.run(
       `
       MATCH (d:Document)-[:MENTIONS]->(e:Entity {name: $entityName})

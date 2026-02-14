@@ -35,6 +35,8 @@ export async function getPointsByBaseId(
   collection: string,
   baseId: string,
 ) {
+  // Required index: baseId (string) — see task #7 for migration to indexed query
+  // Current implementation: Full collection scan with client-side prefix filter
   // Fetch all points via paginated scroll and filter client-side for baseId prefix matching
   // Note: Qdrant doesn't support prefix matching in filters, so we fetch
   // all pages and filter in-memory.
@@ -69,6 +71,12 @@ export async function scrollPoints(
   filter?: Record<string, unknown>,
   limit = 100,
 ) {
+  // Required indexes (when filter is used):
+  // - enrichmentStatus (string)
+  // - repoId (string) 
+  // - path (string)
+  // - lang (string)
+  // See task #6 for index creation
   const allPoints: Array<{ id: string; payload: Record<string, unknown> | undefined }> = [];
   let nextPageOffset: string | number | Record<string, unknown> | null | undefined = undefined;
 

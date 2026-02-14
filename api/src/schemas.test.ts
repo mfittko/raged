@@ -105,6 +105,21 @@ describe("ingest schema validation", () => {
     expect(res.statusCode).toBe(200);
     await app.close();
   });
+
+  it("rejects request with more than 1000 items", async () => {
+    const app = buildApp();
+    const items = Array.from({ length: 1001 }, (_, i) => ({
+      text: `doc ${i}`,
+      source: `test-${i}.txt`,
+    }));
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: { items },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
 });
 
 describe("query schema validation", () => {

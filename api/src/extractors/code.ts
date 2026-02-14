@@ -47,6 +47,7 @@ export function extractCode(item: IngestItem): CodeMetadata {
   // Simple regex-based extraction for common patterns
   // (This is a simplified version; full implementation would use Tree-sitter)
   const text = item.text;
+  const MAX_EXTRACTIONS = 100;
 
   // Extract function names
   const functions: string[] = [];
@@ -60,10 +61,12 @@ export function extractCode(item: IngestItem): CodeMetadata {
     let match;
     while ((match = pattern.exec(text)) !== null) {
       functions.push(match[1]);
+      if (functions.length >= MAX_EXTRACTIONS) break;
     }
+    if (functions.length >= MAX_EXTRACTIONS) break;
   }
   if (functions.length > 0) {
-    result.functions = [...new Set(functions)];
+    result.functions = [...new Set(functions)].slice(0, MAX_EXTRACTIONS);
   }
 
   // Extract class names
@@ -76,10 +79,12 @@ export function extractCode(item: IngestItem): CodeMetadata {
     let match;
     while ((match = pattern.exec(text)) !== null) {
       classes.push(match[1]);
+      if (classes.length >= MAX_EXTRACTIONS) break;
     }
+    if (classes.length >= MAX_EXTRACTIONS) break;
   }
   if (classes.length > 0) {
-    result.classes = [...new Set(classes)];
+    result.classes = [...new Set(classes)].slice(0, MAX_EXTRACTIONS);
   }
 
   // Extract imports
@@ -93,10 +98,12 @@ export function extractCode(item: IngestItem): CodeMetadata {
     let match;
     while ((match = pattern.exec(text)) !== null) {
       imports.push(match[1]);
+      if (imports.length >= MAX_EXTRACTIONS) break;
     }
+    if (imports.length >= MAX_EXTRACTIONS) break;
   }
   if (imports.length > 0) {
-    result.imports = [...new Set(imports)];
+    result.imports = [...new Set(imports)].slice(0, MAX_EXTRACTIONS);
   }
 
   // Extract exports
@@ -110,10 +117,12 @@ export function extractCode(item: IngestItem): CodeMetadata {
     while ((match = pattern.exec(text)) !== null) {
       const names = match[1].split(",").map((s) => s.trim());
       exports.push(...names);
+      if (exports.length >= MAX_EXTRACTIONS) break;
     }
+    if (exports.length >= MAX_EXTRACTIONS) break;
   }
   if (exports.length > 0) {
-    result.exports = [...new Set(exports)];
+    result.exports = [...new Set(exports)].slice(0, MAX_EXTRACTIONS);
   }
 
   return result;

@@ -231,6 +231,9 @@ export async function enqueueEnrichment(
   }
 
   let enqueued = 0;
+  const BATCH_SIZE = 100;
+  const tasks: EnrichmentTask[] = [];
+  
   for (const point of points) {
     const payload = point.payload;
     if (!payload) continue;
@@ -253,8 +256,14 @@ export async function enqueueEnrichment(
       enqueuedAt: new Date().toISOString(),
     };
 
-    await deps.enqueueTask(task);
-    enqueued++;
+    tasks.push(task);
+  }
+
+  // Batch enqueue tasks in groups to avoid overwhelming Redis
+  for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+    const batch = tasks.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map(task => deps.enqueueTask(task)));
+    enqueued += batch.length;
   }
 
   return { ok: true, enqueued };

@@ -9,6 +9,7 @@ export const ingestSchema = {
       items: {
         type: "array" as const,
         minItems: 1,
+        maxItems: 1000,
         items: {
           type: "object" as const,
           required: ["text", "source"],
