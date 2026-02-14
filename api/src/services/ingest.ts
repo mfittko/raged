@@ -38,24 +38,44 @@ export async function ingest(
   const col = deps.collectionName(request.collection);
   await deps.ensureCollection(col);
 
-  const points: QdrantPoint[] = [];
+  const allChunks: string[] = [];
+  const chunkInfos: {
+    baseId: string;
+    chunkIndex: number;
+    source: string;
+    metadata?: Record<string, unknown>;
+  }[] = [];
+
   for (const item of request.items) {
     const baseId = item.id ?? randomUUID();
     const chunks = chunkText(item.text);
-    const vectors = await deps.embed(chunks);
 
     for (let i = 0; i < chunks.length; i++) {
-      points.push({
-        id: `${baseId}:${i}`,
-        vector: vectors[i],
-        payload: {
-          text: chunks[i],
-          source: item.source,
-          chunkIndex: i,
-          ...(item.metadata ?? {}),
-        },
+      allChunks.push(chunks[i]);
+      chunkInfos.push({
+        baseId,
+        chunkIndex: i,
+        source: item.source,
+        metadata: item.metadata,
       });
     }
+  }
+
+  const vectors = await deps.embed(allChunks);
+
+  const points: QdrantPoint[] = [];
+  for (let i = 0; i < allChunks.length; i++) {
+    const info = chunkInfos[i];
+    points.push({
+      id: `${info.baseId}:${info.chunkIndex}`,
+      vector: vectors[i],
+      payload: {
+        text: allChunks[i],
+        source: info.source,
+        chunkIndex: info.chunkIndex,
+        ...(info.metadata ?? {}),
+      },
+    });
   }
 
   await deps.upsert(col, points);

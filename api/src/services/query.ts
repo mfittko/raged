@@ -43,7 +43,11 @@ export async function query(
   const col = deps.collectionName(request.collection);
   await deps.ensureCollection(col);
 
-  const [vector] = await deps.embed([request.query]);
+  const vectors = await deps.embed([request.query]);
+  const [vector] = vectors;
+  if (!vector) {
+    throw new Error("Embedding failed: no vector returned");
+  }
   const topK = request.topK ?? 8;
 
   const hits = await deps.search(col, vector, topK, request.filter);

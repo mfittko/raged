@@ -72,6 +72,8 @@ jobs:
 
   docker-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [build, test, lint]
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +93,8 @@ jobs:
 
   helm-lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
@@ -100,6 +104,8 @@ jobs:
 
   skill-tests:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Run skill tests

@@ -3,7 +3,14 @@ import { chunkText } from "./chunking.js";
 
 describe("chunkText", () => {
   it("returns an empty string in a single-element array for empty input", () => {
-    // After trim(), empty string has length 0 which is <= maxChars, so returns [""]
+    // NOTE: This behavior is intentional and is documented here for clarity.
+    // After trim(), the empty string has length 0 which is <= maxChars, so the
+    // current implementation returns [""] instead of [].
+    //
+    // In the main ingest flow, upstream schema validation (minLength: 1) prevents
+    // empty text from reaching chunkText, so this edge case does not affect the
+    // ingest endpoint. This test exists to lock in and document the behavior in
+    // case chunkText is reused in other contexts.
     const result = chunkText("");
     expect(result).toEqual([""]);
   });

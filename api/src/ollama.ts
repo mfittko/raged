@@ -8,7 +8,9 @@ async function embedOne(text: string): Promise<number[]> {
     body: JSON.stringify({ model: EMBED_MODEL, prompt: text }),
   });
   if (!res.ok) {
-    throw new Error(`Ollama embeddings failed: ${res.status} ${await res.text()}`);
+    const err = new Error(`Ollama embeddings failed: ${res.status} ${await res.text()}`) as Error & { code: string };
+    err.code = "UPSTREAM_SERVICE_ERROR";
+    throw err;
   }
   const json = (await res.json()) as { embedding: number[] };
   return json.embedding;

@@ -118,11 +118,13 @@ describe("API integration tests", () => {
       await app.close();
     });
 
-    it("returns 500 when embed service fails", async () => {
+    it("returns 502 when embed service fails", async () => {
       const { app } = buildTestApp({
         ingestDeps: {
           embed: vi.fn(async () => {
-            throw new Error("Ollama embeddings failed: 503 Service Unavailable");
+            const err = new Error("Ollama embeddings failed: 503 Service Unavailable") as Error & { code: string };
+            err.code = "UPSTREAM_SERVICE_ERROR";
+            throw err;
           }),
         },
       });
@@ -135,8 +137,8 @@ describe("API integration tests", () => {
         },
       });
 
-      expect(res.statusCode).toBe(500);
-      expect(res.json().error).toBe("Internal server error");
+      expect(res.statusCode).toBe(502);
+      expect(res.json().error).toContain("Upstream service error");
       await app.close();
     });
   });
