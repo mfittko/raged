@@ -6,6 +6,9 @@ import { spawn } from "node:child_process";
 import { Command } from "commander";
 import sharp from "sharp";
 
+// Constants
+const LARGE_IMAGE_THRESHOLD_BYTES = 1000000; // 1MB
+
 type IngestItem = { 
   id?: string; 
   text: string; 
@@ -14,6 +17,10 @@ type IngestItem = {
   docType?: string;
   enrich?: boolean;
 };
+
+function normalizePathForId(filePath: string): string {
+  return filePath.replace(/[/\\]/g, ":");
+}
 
 function detectDocType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
@@ -330,13 +337,13 @@ async function cmdIngest(options: any) {
       const { text, metadata = {} } = await readFileContent(filePath, docType);
       
       // Warn about large images
-      if (docType === "image" && text.length > 1000000) {
+      if (docType === "image" && text.length > LARGE_IMAGE_THRESHOLD_BYTES) {
         console.warn(`[rag-index] Warning: Large image file (${Math.round(text.length / 1024)}KB) will be base64-encoded: ${filePath}`);
       }
       
       const fileName = path.basename(filePath);
       const item: IngestItem = {
-        id: `file:${filePath.replace(/[/\\]/g, ":")}`,
+        id: `file:${normalizePathForId(filePath)}`,
         text,
         source: filePath,
         metadata: { ...metadata, fileName, filePath },
