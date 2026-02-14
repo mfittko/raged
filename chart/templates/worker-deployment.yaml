@@ -1,0 +1,34 @@
+{{- if .Values.enrichment.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-enrichment-worker
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.enrichment.worker.replicas }}
+  selector:
+    matchLabels: { app: {{ .Release.Name }}-enrichment-worker }
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-enrichment-worker
+        {{- include "rag.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: worker
+          image: "{{ .Values.enrichment.worker.image.repository }}:{{ .Values.enrichment.worker.image.tag }}"
+          imagePullPolicy: {{ .Values.enrichment.worker.image.pullPolicy }}
+          envFrom:
+            - configMapRef: { name: {{ .Release.Name }}-worker-config }
+          env:
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-neo4j-secret
+                  key: NEO4J_AUTH
+                  optional: false
+          {{- if .Values.enrichment.worker.resources }}
+          resources: {{- toYaml .Values.enrichment.worker.resources | nindent 12 }}
+          {{- end }}
+{{- end }}

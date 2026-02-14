@@ -1,0 +1,25 @@
+{{- if .Values.enrichment.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-worker-config
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+data:
+  REDIS_URL: "redis://{{ .Release.Name }}-redis:{{ .Values.redis.service.port }}"
+  QDRANT_URL: "http://{{ .Release.Name }}-qdrant:{{ .Values.qdrant.service.port }}"
+  NEO4J_URL: "bolt://{{ .Release.Name }}-neo4j:{{ .Values.neo4j.service.boltPort }}"
+  NEO4J_USER: "{{ .Values.neo4j.auth.username }}"
+  OLLAMA_URL: "http://{{ .Release.Name }}-ollama:{{ .Values.ollama.service.port }}"
+  EXTRACTOR_PROVIDER: "{{ .Values.enrichment.worker.extractor.provider }}"
+  EXTRACTOR_MODEL_FAST: "{{ .Values.enrichment.worker.extractor.modelFast }}"
+  EXTRACTOR_MODEL_CAPABLE: "{{ .Values.enrichment.worker.extractor.modelCapable }}"
+  EXTRACTOR_MODEL_VISION: "{{ .Values.enrichment.worker.extractor.modelVision }}"
+  WORKER_CONCURRENCY: "{{ .Values.enrichment.worker.concurrency }}"
+  {{- if .Values.enrichment.worker.extractor.anthropicApiKey }}
+  ANTHROPIC_API_KEY: "{{ .Values.enrichment.worker.extractor.anthropicApiKey }}"
+  {{- end }}
+  {{- if .Values.enrichment.worker.extractor.openaiApiKey }}
+  OPENAI_API_KEY: "{{ .Values.enrichment.worker.extractor.openaiApiKey }}"
+  {{- end }}
+{{- end }}

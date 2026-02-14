@@ -12,3 +12,7 @@ data:
   DISTANCE: "{{ .Values.api.env.DISTANCE }}"
   EMBED_MODEL: "{{ .Values.api.env.EMBED_MODEL }}"
   PORT: "8080"
+  {{- if .Values.enrichment.enabled }}
+  REDIS_URL: "redis://{{ .Release.Name }}-redis:{{ .Values.redis.service.port }}"
+  ENRICHMENT_ENABLED: "true"
+  {{- end }}

@@ -54,3 +54,44 @@ ollama:
     storageClassName: ""
   service:
     port: 11434
+
+enrichment:
+  enabled: false
+  worker:
+    image:
+      repository: your-registry/rag-worker
+      tag: "1.0.0"
+      pullPolicy: IfNotPresent
+    replicas: 1
+    concurrency: 4
+    resources: {}
+    extractor:
+      provider: "ollama"
+      modelFast: "llama3"
+      modelCapable: "llama3"
+      modelVision: "llava"
+      anthropicApiKey: ""
+      openaiApiKey: ""
+
+redis:
+  enabled: false
+  image: redis:7-alpine
+  storage:
+    size: 5Gi
+    storageClassName: ""
+  service:
+    port: 6379
+
+neo4j:
+  enabled: false
+  image: neo4j:5-community
+  auth:
+    username: "neo4j"
+    password: ""
+  storage:
+    size: 20Gi
+    storageClassName: ""
+  service:
+    boltPort: 7687
+    httpPort: 7474
+  plugins: '["apoc"]'
