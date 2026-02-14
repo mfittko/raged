@@ -1,0 +1,44 @@
+{{- if and .Values.indexer.enabled .Values.indexer.repoUrl }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-indexer
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "rag.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: indexer
+          image: "{{ .Values.indexer.image.repository }}:{{ .Values.indexer.image.tag }}"
+          imagePullPolicy: {{ .Values.indexer.image.pullPolicy }}
+          args:
+            - "index"
+            - "--repo"
+            - "{{ .Values.indexer.repoUrl }}"
+            - "--api"
+            - "http://{{ .Release.Name }}-api:{{ .Values.api.service.port }}"
+            - "--collection"
+            - "{{ .Values.indexer.collection }}"
+            {{- if .Values.indexer.branch }}
+            - "--branch"
+            - "{{ .Values.indexer.branch }}"
+            {{- end }}
+            {{- if .Values.indexer.repoId }}
+            - "--repoId"
+            - "{{ .Values.indexer.repoId }}"
+            {{- end }}
+          env:
+            - name: RAG_API_TOKEN
+              value: "{{ default .Values.api.auth.token .Values.indexer.token }}"
+          resources:
+            {{- toYaml .Values.indexer.resources | nindent 12 }}
+{{- end }}

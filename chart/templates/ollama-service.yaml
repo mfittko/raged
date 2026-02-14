@@ -1,0 +1,14 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-ollama
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+spec:
+  selector: { app: {{ .Release.Name }}-ollama }
+  ports:
+    - name: http
+      port: {{ .Values.ollama.service.port }}
+      targetPort: 11434
+{{- end }}

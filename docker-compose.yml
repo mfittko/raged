@@ -1,0 +1,29 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.10.0
+    ports: ["6333:6333"]
+    volumes: ["qdrant_storage:/qdrant/storage"]
+
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+
+  api:
+    build:
+      context: ./api
+    environment:
+      QDRANT_URL: "http://qdrant:6333"
+      OLLAMA_URL: "http://ollama:11434"
+      QDRANT_COLLECTION: "docs"
+      VECTOR_SIZE: "768"
+      DISTANCE: "Cosine"
+      EMBED_MODEL: "nomic-embed-text"
+      PORT: "8080"
+      RAG_API_TOKEN: ""  # set to enable auth
+    ports: ["8080:8080"]
+    depends_on: [qdrant, ollama]
+
+volumes:
+  qdrant_storage:
+  ollama:

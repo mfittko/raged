@@ -1,0 +1,56 @@
+api:
+  image:
+    repository: your-registry/rag-api
+    tag: "0.5.0"
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources: {}
+  env:
+    QDRANT_COLLECTION: "docs"
+    VECTOR_SIZE: "768"
+    DISTANCE: "Cosine"
+    EMBED_MODEL: "nomic-embed-text"
+  auth:
+    enabled: true
+    token: ""
+  service:
+    port: 8080
+  ingress:
+    enabled: false
+    className: ""
+    host: rag.local
+    path: /
+    annotations: {}
+    tls:
+      enabled: false
+      secretName: ""
+
+indexer:
+  enabled: false
+  image:
+    repository: your-registry/rag-index
+    tag: "0.5.0"
+    pullPolicy: IfNotPresent
+  repoUrl: ""
+  repoId: ""
+  branch: ""
+  collection: "docs"
+  token: ""
+  resources: {}
+
+qdrant:
+  image: qdrant/qdrant:v1.10.0
+  storage:
+    size: 20Gi
+    storageClassName: ""
+  service:
+    port: 6333
+
+ollama:
+  enabled: true
+  image: ollama/ollama:latest
+  storage:
+    size: 30Gi
+    storageClassName: ""
+  service:
+    port: 11434

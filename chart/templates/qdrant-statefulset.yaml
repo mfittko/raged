@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-qdrant
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-qdrant
+  replicas: 1
+  selector:
+    matchLabels: { app: {{ .Release.Name }}-qdrant }
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-qdrant
+        {{- include "rag.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: qdrant
+          image: {{ .Values.qdrant.image }}
+          ports: [{ containerPort: 6333 }]
+          volumeMounts: [{ name: data, mountPath: /qdrant/storage }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: {{ .Values.qdrant.storage.size }} } }
+        {{- if .Values.qdrant.storage.storageClassName }}
+        storageClassName: {{ .Values.qdrant.storage.storageClassName }}
+        {{- end }}

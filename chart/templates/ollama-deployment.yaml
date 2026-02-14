@@ -1,0 +1,26 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-ollama
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: {{ .Release.Name }}-ollama }
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-ollama
+        {{- include "rag.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: ollama
+          image: {{ .Values.ollama.image }}
+          ports: [{ containerPort: 11434 }]
+          volumeMounts: [{ name: ollama, mountPath: /root/.ollama }]
+      volumes:
+        - name: ollama
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-ollama }
+{{- end }}

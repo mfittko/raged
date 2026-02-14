@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-api-config
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+data:
+  QDRANT_URL: "http://{{ .Release.Name }}-qdrant:{{ .Values.qdrant.service.port }}"
+  OLLAMA_URL: "http://{{ .Release.Name }}-ollama:{{ .Values.ollama.service.port }}"
+  QDRANT_COLLECTION: "{{ .Values.api.env.QDRANT_COLLECTION }}"
+  VECTOR_SIZE: "{{ .Values.api.env.VECTOR_SIZE }}"
+  DISTANCE: "{{ .Values.api.env.DISTANCE }}"
+  EMBED_MODEL: "{{ .Values.api.env.EMBED_MODEL }}"
+  PORT: "8080"
