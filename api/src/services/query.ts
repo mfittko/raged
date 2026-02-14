@@ -57,14 +57,6 @@ export interface QueryDeps {
    * @returns Array of connected entities
    */
   expandEntities?: (entityNames: string[], depth?: number) => Promise<Array<{ name: string; type: string }>>;
-  /**
-   * Optional: Retrieves points by their IDs.
-   * Provide when graph expansion needs to fetch additional documents.
-   * @param collection - Collection name
-   * @param ids - Array of point IDs to retrieve
-   * @returns Array of search hits with scores
-   */
-  getPointsByIds?: (collection: string, ids: string[]) => Promise<SearchHit[]>;
 }
 
 export async function query(

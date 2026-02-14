@@ -10,6 +10,7 @@ function makeDeps(overrides?: Partial<QueryDeps>): QueryDeps {
     ensureCollection: overrides?.ensureCollection ?? vi.fn(async () => {}),
     search: overrides?.search ?? vi.fn(async () => []),
     collectionName: overrides?.collectionName ?? vi.fn((name?: string) => name || "docs"),
+    expandEntities: overrides?.expandEntities,
   };
 }
 
@@ -167,6 +168,229 @@ describe("query service", () => {
       source: undefined,
       text: undefined,
       payload: { someOtherField: "value" },
+    });
+  });
+
+  describe("graph expansion", () => {
+    it("does not expand when graphExpand is false", async () => {
+      const expandEntitiesMock = vi.fn(async () => []);
+      const deps = makeDeps({
+        search: vi.fn(async () => [
+          {
+            id: "doc-1:0",
+            score: 0.9,
+            payload: {
+              text: "test",
+              tier2Meta: { entities: [{ text: "AuthService" }] },
+            },
+          },
+        ]),
+        expandEntities: expandEntitiesMock,
+      });
+      const request: QueryRequest = {
+        query: "hello",
+        graphExpand: false,
+      };
+
+      const result = await query(request, deps);
+
+      expect(expandEntitiesMock).not.toHaveBeenCalled();
+      expect(result.graph).toBeUndefined();
+    });
+
+    it("does not expand when expandEntities is not provided", async () => {
+      const deps = makeDeps({
+        search: vi.fn(async () => [
+          {
+            id: "doc-1:0",
+            score: 0.9,
+            payload: {
+              text: "test",
+              tier2Meta: { entities: [{ text: "AuthService" }] },
+            },
+          },
+        ]),
+      });
+      const request: QueryRequest = {
+        query: "hello",
+        graphExpand: true,
+      };
+
+      const result = await query(request, deps);
+
+      expect(result.graph).toBeUndefined();
+    });
+
+    it("extracts entities from tier2Meta and expands", async () => {
+      const expandEntitiesMock = vi.fn(async (names: string[]) => [
+        { name: "JWT", type: "library" },
+      ]);
+      const deps = makeDeps({
+        search: vi.fn(async () => [
+          {
+            id: "doc-1:0",
+            score: 0.9,
+            payload: {
+              text: "test",
+              tier2Meta: { entities: [{ text: "AuthService" }, { text: "UserService" }] },
+            },
+          },
+        ]),
+        expandEntities: expandEntitiesMock,
+      });
+      const request: QueryRequest = {
+        query: "hello",
+        graphExpand: true,
+      };
+
+      const result = await query(request, deps);
+
+      expect(expandEntitiesMock).toHaveBeenCalledWith(["AuthService", "UserService"], 2);
+      expect(result.graph).toBeDefined();
+      expect(result.graph?.entities).toHaveLength(3);
+      expect(result.graph?.entities.map(e => e.name).sort()).toEqual(["AuthService", "JWT", "UserService"]);
+    });
+
+    it("extracts entities from tier3Meta and expands", async () => {
+      const expandEntitiesMock = vi.fn(async () => [
+        { name: "Database", type: "service" },
+      ]);
+      const deps = makeDeps({
+        search: vi.fn(async () => [
+          {
+            id: "doc-1:0",
+            score: 0.9,
+            payload: {
+              text: "test",
+              tier3Meta: { entities: [{ name: "API" }, { name: "Cache" }] },
+            },
+          },
+        ]),
+        expandEntities: expandEntitiesMock,
+      });
+      const request: QueryRequest = {
+        query: "hello",
+        graphExpand: true,
+      };
+
+      const result = await query(request, deps);
+
+      expect(expandEntitiesMock).toHaveBeenCalledWith(["API", "Cache"], 2);
+      expect(result.graph).toBeDefined();
+      expect(result.graph?.entities).toHaveLength(3);
+    });
+
+    it("merges entities from tier2Meta and tier3Meta", async () => {
+      const expandEntitiesMock = vi.fn(async () => []);
+      const deps = makeDeps({
+        search: vi.fn(async () => [
+          {
+            id: "doc-1:0",
+            score: 0.9,
+            payload: {
+              text: "test",
+              tier2Meta: { entities: [{ text: "EntityA" }] },
+              tier3Meta: { entities: [{ name: "EntityB" }] },
+            },
+          },
+        ]),
+        expandEntities: expandEntitiesMock,
+      });
+      const request: QueryRequest = {
+        query: "hello",
+        graphExpand: true,
+      };
+
+      const result = await query(request, deps);
+
+      expect(expandEntitiesMock).toHaveBeenCalledWith(["EntityA", "EntityB"], 2);
+    });
+
+    it("deduplicates entities across multiple results", async () => {
+      const expandEntitiesMock = vi.fn(async () => []);
+      const deps = makeDeps({
+        search: vi.fn(async () => [
+          {
+            id: "doc-1:0",
+            score: 0.9,
+            payload: {
+              text: "test",
+              tier2Meta: { entities: [{ text: "SharedEntity" }] },
+            },
+          },
+          {
+            id: "doc-2:0",
+            score: 0.8,
+            payload: {
+              text: "test2",
+              tier2Meta: { entities: [{ text: "SharedEntity" }] },
+            },
+          },
+        ]),
+        expandEntities: expandEntitiesMock,
+      });
+      const request: QueryRequest = {
+        query: "hello",
+        graphExpand: true,
+      };
+
+      await query(request, deps);
+
+      // Should only call with unique entity names
+      expect(expandEntitiesMock).toHaveBeenCalledWith(["SharedEntity"], 2);
+    });
+
+    it("handles empty entity extraction", async () => {
+      const expandEntitiesMock = vi.fn(async () => []);
+      const deps = makeDeps({
+        search: vi.fn(async () => [
+          {
+            id: "doc-1:0",
+            score: 0.9,
+            payload: { text: "test" },
+          },
+        ]),
+        expandEntities: expandEntitiesMock,
+      });
+      const request: QueryRequest = {
+        query: "hello",
+        graphExpand: true,
+      };
+
+      const result = await query(request, deps);
+
+      expect(expandEntitiesMock).not.toHaveBeenCalled();
+      expect(result.graph).toBeUndefined();
+    });
+
+    it("builds graph with entity types from expanded results", async () => {
+      const expandEntitiesMock = vi.fn(async () => [
+        { name: "ExpandedEntity", type: "class" },
+      ]);
+      const deps = makeDeps({
+        search: vi.fn(async () => [
+          {
+            id: "doc-1:0",
+            score: 0.9,
+            payload: {
+              text: "test",
+              tier2Meta: { entities: [{ text: "OriginalEntity" }] },
+            },
+          },
+        ]),
+        expandEntities: expandEntitiesMock,
+      });
+      const request: QueryRequest = {
+        query: "hello",
+        graphExpand: true,
+      };
+
+      const result = await query(request, deps);
+
+      expect(result.graph?.entities).toEqual([
+        { name: "OriginalEntity", type: "unknown" },
+        { name: "ExpandedEntity", type: "class" },
+      ]);
     });
   });
 });

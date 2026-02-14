@@ -52,9 +52,6 @@ export function buildApp() {
       },
       collectionName,
       expandEntities: isGraphEnabled() ? expandEntities : undefined,
-      getPointsByIds: async (collection, ids) => {
-        return getPointsByIds(collection, ids);
-      },
     });
   });
 

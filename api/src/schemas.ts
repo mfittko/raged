@@ -1,6 +1,7 @@
 export const ingestSchema = {
   body: {
     type: "object" as const,
+    additionalProperties: false as const,
     required: ["items"],
     properties: {
       collection: { type: "string" as const },
@@ -30,6 +31,7 @@ export const ingestSchema = {
 export const querySchema = {
   body: {
     type: "object" as const,
+    additionalProperties: false as const,
     required: ["query"],
     properties: {
       collection: { type: "string" as const },
