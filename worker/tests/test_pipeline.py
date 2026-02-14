@@ -92,12 +92,12 @@ async def test_process_task_multi_chunk(mock_task):
          patch("src.pipeline.adapter") as mock_adapter, \
          patch("src.pipeline.graph") as mock_graph:
         
-        # Mock Qdrant retrieve for aggregation
+        # Mock Qdrant retrieve for aggregation - return all 3 chunks
         mock_points = [
-            MagicMock(payload={"text": f"chunk {i}"})
+            MagicMock(id=f"test-id:{i}", payload={"text": f"chunk {i}"})
             for i in range(3)
         ]
-        mock_qdrant.retrieve.return_value = mock_points[:1]  # Return one at a time
+        mock_qdrant.retrieve.return_value = mock_points
         
         # Mock adapter responses
         mock_adapter.extract_metadata = AsyncMock(return_value={

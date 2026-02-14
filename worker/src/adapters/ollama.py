@@ -21,10 +21,11 @@ class OllamaAdapter(ExtractorAdapter):
     
     async def extract_metadata(self, text: str, doc_type: str, schema: Dict) -> Dict:
         """Extract type-specific metadata using Ollama."""
+        # Truncate to 8000 chars to match other adapters (Ollama typically has larger context)
         prompt = f"""Analyze this {doc_type} document and extract metadata according to the schema.
 
 Text:
-{text[:4000]}
+{text[:8000]}
 
 Schema:
 {json.dumps(schema, indent=2)}
@@ -35,10 +36,11 @@ Respond with valid JSON matching the schema. Do not include any explanation, jus
     
     async def extract_entities(self, text: str) -> Dict:
         """Extract entities and relationships using Ollama."""
+        # Truncate to 8000 chars to match other adapters
         prompt = f"""Extract entities and relationships from this text.
 
 Text:
-{text[:4000]}
+{text[:8000]}
 
 For each entity, provide:
 - name: entity name

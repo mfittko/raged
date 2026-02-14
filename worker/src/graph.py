@@ -42,13 +42,14 @@ async def upsert_entity(name: str, entity_type: str, description: str = "") -> N
     """
     driver = get_driver()
     async with driver.session() as session:
+        # Don't increment mentionCount here - it's managed by add_mention()
         await session.run("""
             MERGE (e:Entity {name: $name})
             SET e.type = $type,
                 e.description = $description,
-                e.lastSeen = datetime(),
-                e.mentionCount = coalesce(e.mentionCount, 0) + 1
-            ON CREATE SET e.firstSeen = datetime()
+                e.lastSeen = datetime()
+            ON CREATE SET e.firstSeen = datetime(),
+                         e.mentionCount = 0
         """, name=name, type=entity_type, description=description)
 
 
@@ -90,10 +91,16 @@ async def add_mention(doc_id: str, entity_name: str) -> None:
     """
     driver = get_driver()
     async with driver.session() as session:
+        # Create mention relationship and update mentionCount based on unique documents
         await session.run("""
             MATCH (d:Document {id: $docId})
             MATCH (e:Entity {name: $entityName})
-            MERGE (d)-[:MENTIONS]->(e)
+            MERGE (d)-[m:MENTIONS]->(e)
+            ON CREATE SET m.createdAt = datetime()
+            WITH e
+            MATCH (doc:Document)-[:MENTIONS]->(e)
+            WITH e, count(DISTINCT doc) as uniqueDocs
+            SET e.mentionCount = uniqueDocs
         """, docId=doc_id, entityName=entity_name)
 
 

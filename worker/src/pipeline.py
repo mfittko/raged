@@ -288,26 +288,3 @@ async def update_payload(point_id: str, collection: str, payload: Dict) -> None:
         )
     except Exception as e:
         logger.error(f"Failed to update payload for {point_id}: {e}")
-
-
-def get_source_from_qdrant(base_id: str, collection: str) -> str:
-    """Get the source field from the first chunk of a document.
-    
-    Args:
-        base_id: Document base ID
-        collection: Collection name
-        
-    Returns:
-        Source string
-    """
-    try:
-        points = qdrant.retrieve(
-            collection_name=collection,
-            ids=[f"{base_id}:0"]
-        )
-        if points:
-            return points[0].payload.get("source", "")
-    except Exception as e:
-        logger.warning(f"Failed to get source for {base_id}: {e}")
-    
-    return ""

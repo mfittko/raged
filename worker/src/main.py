@@ -33,8 +33,10 @@ async def process_task_with_retry(redis_client: aioredis.Redis, task: dict) -> N
     retry_after = task.get("retryAfter", 0)
     if retry_after > time.time():
         delay = retry_after - time.time()
-        logger.info(f"Task {task_id} delayed for {delay:.1f}s (retry backoff)")
-        await asyncio.sleep(delay)
+        logger.info(f"Task {task_id} delayed for {delay:.1f}s (retry backoff); re-queuing without blocking worker")
+        # Re-queue the task for later processing instead of sleeping while holding a worker slot
+        await redis_client.rpush(QUEUE_NAME, json.dumps(task))
+        return
     
     try:
         start_time = time.time()
@@ -60,9 +62,10 @@ async def process_task_with_retry(redis_client: aioredis.Redis, task: dict) -> N
         
         # Retry logic
         if attempt < MAX_RETRIES:
-            # Increment attempt and re-queue immediately (backoff handled externally)
+            # Increment attempt and re-queue with exponential backoff
             task["attempt"] = attempt + 1
-            task["retryAfter"] = time.time() + min(2 ** (attempt - 1), 60)
+            # Use attempt (not attempt-1) for proper exponential backoff: 2, 4, 8, 16, 32, 60
+            task["retryAfter"] = time.time() + min(2 ** attempt, 60)
             await redis_client.rpush(QUEUE_NAME, json.dumps(task))
             logger.info(f"Re-queued task {task_id} for retry {attempt + 1}")
         else:
@@ -122,6 +125,9 @@ async def worker_loop() -> None:
         await asyncio.gather(*workers, return_exceptions=True)
     finally:
         await redis_client.close()
+        # Close Neo4j driver
+        from src import graph
+        await graph.close_driver()
 
 
 def main():
