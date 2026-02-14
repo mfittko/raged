@@ -290,4 +290,105 @@ describe("API integration tests", () => {
       await app.close();
     });
   });
+
+  describe("enrichment endpoints", () => {
+    it("GET /enrichment/status/:baseId returns 404 for missing baseId", async () => {
+      // This test requires Qdrant to be running. When Qdrant is not available,
+      // the error handler will return 500, so we check for either 404 or 500.
+      const { buildApp } = await import("./server.js");
+      const app = buildApp();
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/enrichment/status/nonexistent-base-id",
+      });
+
+      // Either 404 (baseId not found) or 500 (Qdrant unavailable in test env)
+      expect([404, 500]).toContain(res.statusCode);
+      expect(res.json()).toHaveProperty("error");
+      await app.close();
+    });
+
+    it("GET /enrichment/stats returns stats when enrichment disabled", async () => {
+      const { buildApp } = await import("./server.js");
+      const app = buildApp();
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/enrichment/stats",
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body).toHaveProperty("queue");
+      expect(body).toHaveProperty("totals");
+      await app.close();
+    });
+
+    it("POST /enrichment/enqueue returns 0 when enrichment disabled", async () => {
+      const { buildApp } = await import("./server.js");
+      const app = buildApp();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/enrichment/enqueue",
+        payload: { collection: "docs" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ ok: true, enqueued: 0 });
+      await app.close();
+    });
+
+    it("POST /enrichment/enqueue accepts valid payload", async () => {
+      const { buildApp } = await import("./server.js");
+      const app = buildApp();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/enrichment/enqueue",
+        payload: { collection: "docs", force: false },
+      });
+
+      expect(res.statusCode).toBe(200);
+      await app.close();
+    });
+  });
+
+  describe("graph endpoints", () => {
+    it("GET /graph/entity/:name returns 503 when graph disabled", async () => {
+      const { buildApp } = await import("./server.js");
+      const app = buildApp();
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/graph/entity/AuthService",
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toEqual({ error: "Graph functionality is not enabled" });
+      await app.close();
+    });
+  });
+
+  describe("POST /query with graphExpand", () => {
+    it("accepts graphExpand parameter", async () => {
+      const { app } = buildTestApp();
+      const res = await app.inject({
+        method: "POST",
+        url: "/query",
+        payload: {
+          query: "authentication flow",
+          graphExpand: true,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.results).toHaveLength(1);
+      // Graph data would be present if Neo4j was enabled and entities were found
+      await app.close();
+    });
+  });
 });

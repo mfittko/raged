@@ -51,6 +51,18 @@ Do not build features until they are needed. Design so that future features are 
 - **Test file location:** Co-located next to source as `<module>.test.ts`
 - **Test runner:** Vitest (when added)
 
+## Performance Requirements
+
+All code changes **must** be reviewed for performance impact. Specifically:
+
+- **No O(n²) or worse patterns.** Nested loops over collections, repeated `Array.find`/`Array.filter` inside loops, or any pattern where work scales quadratically with input size must be refactored. Use `Map`, `Set`, or index lookups to achieve O(n) or O(n log n).
+- **No N+1 queries.** Never issue one query per item in a collection. Batch reads and writes. If you're calling Qdrant, Neo4j, or any external service inside a loop, refactor to a single batch operation.
+- **Bound memory consumption.** Process large datasets with streaming or chunked iteration — never load unbounded collections into memory. Use pagination for API responses and database reads. Set explicit limits on array sizes, queue depths, and buffer lengths.
+- **Avoid unnecessary allocations in hot paths.** Don't create intermediate arrays, objects, or closures inside tight loops when the result can be computed in-place or with a single pass.
+- **Prefer `for...of` over chained array methods** when processing large collections where intermediate arrays would be wasteful.
+- **Index-aware database access.** Every query pattern must have a supporting index. Document required indexes alongside the query code.
+- **Measure before optimizing.** Don't optimize code that isn't a bottleneck. But do flag code that is obviously inefficient regardless of current scale — the data will grow.
+
 ## Architecture Guardrails
 
 - **Stateless API:** The Fastify API holds no state. All persistence is in Qdrant. This makes horizontal scaling trivial.

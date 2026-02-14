@@ -60,6 +60,15 @@ export async function enqueueEnrichment(
   await client.lPush(QUEUE_NAME, JSON.stringify(task));
 }
 
+export async function getQueueLength(queueName: string): Promise<number> {
+  if (!isEnrichmentEnabled()) {
+    return 0;
+  }
+
+  const client = await getRedisClient();
+  return await client.lLen(queueName);
+}
+
 export async function closeRedis(): Promise<void> {
   if (redisClient) {
     await redisClient.quit();

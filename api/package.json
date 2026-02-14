@@ -12,6 +12,7 @@
   "dependencies": {
     "@qdrant/js-client-rest": "^1.12.0",
     "fastify": "^4.28.1",
+    "neo4j-driver": "^6.0.1",
     "pino-pretty": "^11.2.2",
     "redis": "^5.10.0"
   },

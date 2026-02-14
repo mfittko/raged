@@ -3,6 +3,7 @@ export interface QueryRequest {
   query: string;
   topK?: number;
   filter?: Record<string, unknown>;
+  graphExpand?: boolean;
 }
 
 export interface QueryResultItem {
@@ -13,9 +14,23 @@ export interface QueryResultItem {
   payload?: Record<string, unknown>;
 }
 
+export interface GraphData {
+  entities: Array<{
+    name: string;
+    type: string;
+    mentionCount?: number;
+  }>;
+  relationships: Array<{
+    source: string;
+    target: string;
+    type: string;
+  }>;
+}
+
 export interface QueryResult {
   ok: true;
   results: QueryResultItem[];
+  graph?: GraphData;
 }
 
 export interface SearchHit {
@@ -34,6 +49,14 @@ export interface QueryDeps {
     filter?: Record<string, unknown>,
   ) => Promise<SearchHit[]>;
   collectionName: (name?: string) => string;
+  /**
+   * Optional: Expands entities in Neo4j graph.
+   * Provide when graph functionality is enabled to support graphExpand queries.
+   * @param entityNames - Array of entity names to expand from
+   * @param depth - How many hops to traverse (default 2)
+   * @returns Array of connected entities
+   */
+  expandEntities?: (entityNames: string[], depth?: number) => Promise<Array<{ name: string; type: string }>>;
 }
 
 export async function query(
@@ -52,7 +75,7 @@ export async function query(
 
   const hits = await deps.search(col, vector, topK, request.filter);
 
-  const results: QueryResultItem[] = hits.map((hit) => ({
+  let results: QueryResultItem[] = hits.map((hit) => ({
     id: hit.id,
     score: hit.score,
     source: hit.payload?.source as string | undefined,
@@ -60,5 +83,59 @@ export async function query(
     payload: hit.payload,
   }));
 
-  return { ok: true, results };
+  let graphData: GraphData | undefined;
+
+  // Graph expansion if requested
+  if (request.graphExpand && deps.expandEntities) {
+    // Extract entity names from tier2/tier3 metadata in results
+    const entityNames = new Set<string>();
+    for (const result of results) {
+      const tier2 = result.payload?.tier2 as Record<string, unknown> | undefined;
+      const tier3 = result.payload?.tier3 as Record<string, unknown> | undefined;
+
+      if (tier2?.entities) {
+        const entities = tier2.entities as Array<{ text: string }>;
+        for (const entity of entities) {
+          entityNames.add(entity.text);
+        }
+      }
+
+      if (tier3?.entities) {
+        const entities = tier3.entities as Array<{ name: string }>;
+        for (const entity of entities) {
+          entityNames.add(entity.name);
+        }
+      }
+    }
+
+    if (entityNames.size > 0) {
+      // Expand entities in the graph
+      const expandedEntities = await deps.expandEntities(Array.from(entityNames), 2);
+      
+      // Extract unique entity names from expanded results
+      const allEntityNames = new Set([...entityNames, ...expandedEntities.map(e => e.name)]);
+      
+      // Build graph data structure
+      graphData = {
+        entities: Array.from(allEntityNames).map(name => {
+          const entity = expandedEntities.find(e => e.name === name);
+          return {
+            name,
+            type: entity?.type || "unknown",
+          };
+        }),
+        relationships: [],
+      };
+
+      // Optionally fetch additional documents that mention these entities
+      // For simplicity, we'll just include the graph structure for now
+    }
+  }
+
+  const result: QueryResult = { ok: true, results };
+  if (graphData) {
+    result.graph = graphData;
+  }
+
+  return result;
 }
