@@ -49,7 +49,21 @@ export interface QueryDeps {
     filter?: Record<string, unknown>,
   ) => Promise<SearchHit[]>;
   collectionName: (name?: string) => string;
+  /**
+   * Optional: Expands entities in Neo4j graph.
+   * Provide when graph functionality is enabled to support graphExpand queries.
+   * @param entityNames - Array of entity names to expand from
+   * @param depth - How many hops to traverse (default 2)
+   * @returns Array of connected entities
+   */
   expandEntities?: (entityNames: string[], depth?: number) => Promise<Array<{ name: string; type: string }>>;
+  /**
+   * Optional: Retrieves points by their IDs.
+   * Provide when graph expansion needs to fetch additional documents.
+   * @param collection - Collection name
+   * @param ids - Array of point IDs to retrieve
+   * @returns Array of search hits with scores
+   */
   getPointsByIds?: (collection: string, ids: string[]) => Promise<SearchHit[]>;
 }
 

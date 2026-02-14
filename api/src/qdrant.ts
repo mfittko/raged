@@ -35,19 +35,10 @@ export async function getPointsByBaseId(
   collection: string,
   baseId: string,
 ) {
-  const result = await qdrant.scroll(collection, {
-    filter: {
-      should: [
-        {
-          key: "id",
-          match: { value: baseId },
-        },
-      ],
-    },
-    limit: 100,
-  });
-
-  // Also search by ID prefix pattern (baseId:chunkIndex)
+  // Fetch all points and filter client-side for baseId prefix matching
+  // Note: Qdrant doesn't support prefix matching in filters, so we fetch
+  // a reasonable batch and filter in-memory. For very large collections,
+  // consider implementing pagination.
   const allPoints = await qdrant.scroll(collection, {
     limit: 1000,
   });

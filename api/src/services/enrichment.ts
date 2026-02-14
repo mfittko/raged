@@ -166,6 +166,8 @@ export async function getEnrichmentStats(
   ]);
 
   // Count processing items by scrolling through collection
+  // Note: This uses a high limit for initial implementation. For very large
+  // collections (>10k items), consider implementing pagination or caching.
   const col = deps.collectionName();
   const allPoints = await deps.scrollPoints(col, undefined, 10000);
 
@@ -212,6 +214,8 @@ export async function enqueueEnrichment(
         ],
       };
 
+  // Note: This uses a high limit for initial implementation. For very large
+  // collections (>10k items), consider implementing pagination or batching.
   const points = await deps.scrollPoints(col, filter, 10000);
 
   let enqueued = 0;
