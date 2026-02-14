@@ -92,9 +92,11 @@ export async function ingest(
   }
 
   const vectors = await deps.embed(allChunks);
-  const now = new Date().toISOString();
 
   const points: QdrantPoint[] = [];
+  // Use single timestamp for all chunks in this batch for consistency
+  const now = new Date().toISOString();
+
   for (let i = 0; i < allChunks.length; i++) {
     const info = chunkInfos[i];
     points.push({

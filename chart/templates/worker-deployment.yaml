@@ -27,7 +27,6 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-neo4j-secret
                   key: NEO4J_AUTH
-                  optional: false
           {{- if .Values.enrichment.worker.resources }}
           resources: {{- toYaml .Values.enrichment.worker.resources | nindent 12 }}
           {{- end }}

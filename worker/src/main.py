@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import redis.asyncio as aioredis
 from src.config import REDIS_URL, QUEUE_NAME, WORKER_CONCURRENCY
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -12,12 +14,10 @@ async def process_task(task_data: dict) -> None:
 
 async def worker_loop() -> None:
     """Main worker loop: dequeue and process tasks."""
-    import redis.asyncio as aioredis
     r = aioredis.from_url(REDIS_URL)
     logger.info(f"Worker started, listening on {QUEUE_NAME}")
     while True:
         _, raw = await r.brpop(QUEUE_NAME)
-        import json
         task = json.loads(raw)
         await process_task(task)
 
