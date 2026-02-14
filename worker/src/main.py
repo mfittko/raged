@@ -33,10 +33,9 @@ async def process_task_with_retry(redis_client: aioredis.Redis, task: dict) -> N
     retry_after = task.get("retryAfter", 0)
     if retry_after > time.time():
         delay = retry_after - time.time()
-        logger.info(f"Task {task_id} delayed for {delay:.1f}s (retry backoff); re-queuing without blocking worker")
-        # Re-queue the task for later processing instead of sleeping while holding a worker slot
-        await redis_client.rpush(QUEUE_NAME, json.dumps(task))
-        return
+        logger.info(f"Task {task_id} delayed for {delay:.1f}s (retry backoff); sleeping before processing")
+        if delay > 0:
+            await asyncio.sleep(delay)
     
     try:
         start_time = time.time()

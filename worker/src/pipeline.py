@@ -1,11 +1,9 @@
 """Complete enrichment pipeline for processing tasks."""
 import asyncio
-import json
 import logging
-from typing import Dict, List
+from typing import Dict
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct
-from src.config import QDRANT_URL, MAX_RETRIES
+from src.config import QDRANT_URL
 from src.tier2 import extract_entities as nlp_entities, extract_keywords, detect_language
 from src.adapters import get_adapter
 from src.schemas import get_schema_for_doctype

@@ -194,8 +194,8 @@ Extract all entities and relationships you can identify."""
             if start >= 0 and end > start:
                 json_str = text[start:end]
                 return json.loads(json_str)
-        except:
-            pass
+        except Exception as e:
+            logger.debug("Failed to parse image description as JSON; falling back to heuristic parsing", exc_info=True)
         
         # Fallback: parse from structured text
         result = {

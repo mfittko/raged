@@ -3,6 +3,24 @@ import pytest
 from src.tier2 import extract_entities, extract_keywords, detect_language
 
 
+# Helper to check if spaCy model is available
+def _spacy_model_available():
+    """Check if spaCy model is installed."""
+    try:
+        import spacy
+        spacy.load("en_core_web_sm")
+        return True
+    except (OSError, ImportError):
+        return False
+
+
+requires_spacy_model = pytest.mark.skipif(
+    not _spacy_model_available(),
+    reason="spaCy model en_core_web_sm not installed"
+)
+
+
+@requires_spacy_model
 def test_extract_entities():
     """Test entity extraction from text."""
     text = "Apple Inc. was founded by Steve Jobs in Cupertino, California on April 1, 1976."
@@ -18,12 +36,14 @@ def test_extract_entities():
     assert any("Jobs" in text or "Steve Jobs" in text for text in entity_texts)
 
 
+@requires_spacy_model
 def test_extract_entities_empty():
     """Test entity extraction with empty text."""
     assert extract_entities("") == []
     assert extract_entities("   ") == []
 
 
+@requires_spacy_model
 def test_extract_keywords():
     """Test keyword extraction from text."""
     text = """
@@ -41,6 +61,7 @@ def test_extract_keywords():
     assert all(isinstance(k, str) for k in keywords)
 
 
+@requires_spacy_model
 def test_extract_keywords_empty():
     """Test keyword extraction with empty text."""
     assert extract_keywords("") == []

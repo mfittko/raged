@@ -6,12 +6,11 @@ from typing import List, Dict, Optional
 # Module-level state for lazy loading
 _nlp: Optional[spacy.Language] = None
 _nlp_lock = threading.Lock()
-_textrank_initialized = False
 
 
 def _get_nlp() -> spacy.Language:
     """Lazy-load spaCy model with error handling."""
-    global _nlp, _textrank_initialized
+    global _nlp
     
     if _nlp is None:
         with _nlp_lock:
@@ -22,7 +21,6 @@ def _get_nlp() -> spacy.Language:
                     import pytextrank
                     if "textrank" not in _nlp.pipe_names:
                         _nlp.add_pipe("textrank")
-                        _textrank_initialized = True
                 except Exception as e:
                     raise RuntimeError(
                         f"Failed to load spaCy model 'en_core_web_sm'. "
