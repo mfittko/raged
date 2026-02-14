@@ -2,18 +2,21 @@ import Fastify from "fastify";
 import { ensureCollection, qdrant, collectionName } from "./qdrant.js";
 import { embed } from "./ollama.js";
 import { registerAuth } from "./auth.js";
+import { registerErrorHandler } from "./errors.js";
 import { ingest } from "./services/ingest.js";
 import { query } from "./services/query.js";
+import { ingestSchema, querySchema } from "./schemas.js";
 import type { IngestRequest } from "./services/ingest.js";
 import type { QueryRequest } from "./services/query.js";
 
 export function buildApp() {
   const app = Fastify({ logger: true });
+  registerErrorHandler(app);
   registerAuth(app);
 
   app.get("/healthz", async () => ({ ok: true }));
 
-  app.post("/ingest", async (req) => {
+  app.post("/ingest", { schema: ingestSchema }, async (req) => {
     const body = req.body as IngestRequest;
     return ingest(body, {
       embed,
@@ -25,7 +28,7 @@ export function buildApp() {
     });
   });
 
-  app.post("/query", async (req) => {
+  app.post("/query", { schema: querySchema }, async (req) => {
     const body = req.body as QueryRequest;
     return query(body, {
       embed,
