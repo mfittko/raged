@@ -51,6 +51,18 @@ export interface EnqueueResult {
 
 export interface EnrichmentDeps {
   collectionName: (name?: string) => string;
+  scrollPointsPage: (
+    collection: string,
+    filter?: Record<string, unknown>,
+    limit?: number,
+    offset?: string | number | Record<string, unknown> | null,
+  ) => Promise<{
+    points: Array<{
+      id: string;
+      payload?: Record<string, unknown>;
+    }>;
+    nextOffset: string | number | Record<string, unknown> | null;
+  }>;
   scrollPoints: (
     collection: string,
     filter?: Record<string, unknown>,
@@ -159,7 +171,7 @@ export async function getEnrichmentStatus(
 }
 
 export async function getEnrichmentStats(
-  deps: Pick<EnrichmentDeps, "getQueueLength" | "scrollPoints" | "collectionName">,
+  deps: Pick<EnrichmentDeps, "getQueueLength" | "scrollPointsPage" | "collectionName">,
 ): Promise<EnrichmentStatsResult> {
   // Get queue lengths from Redis
   const [pending, deadLetter] = await Promise.all([
@@ -179,21 +191,22 @@ export async function getEnrichmentStats(
     none: 0,
   };
 
-  let offset: string | number | Record<string, unknown> | null | undefined = undefined;
-  let hasMore = true;
+  let offset: string | number | Record<string, unknown> | null = null;
 
-  while (hasMore) {
-    const points = await deps.scrollPoints(col, undefined, PAGE_SIZE);
+  while (true) {
+    const page = await deps.scrollPointsPage(col, undefined, PAGE_SIZE, offset);
     
-    for (const point of points) {
+    for (const point of page.points) {
       const status = (point.payload?.enrichmentStatus as string) || "none";
       if (status in totals) {
         totals[status as keyof typeof totals]++;
       }
     }
-    
-    // If we got fewer points than requested, we're done
-    hasMore = points.length >= PAGE_SIZE;
+
+    if (page.nextOffset === null) {
+      break;
+    }
+    offset = page.nextOffset;
   }
 
   return {
@@ -232,21 +245,30 @@ export async function enqueueEnrichment(
   const baseIdToTotalChunks = new Map<string, number>();
   const pendingTasks: EnrichmentTask[] = [];
 
-  let offset: string | number | Record<string, unknown> | null | undefined = undefined;
-  let hasMore = true;
+  let offset: string | number | Record<string, unknown> | null = null;
 
-  while (hasMore) {
-    const points = await deps.scrollPoints(col, filter, PAGE_SIZE);
-    
-    // First pass: count chunks per baseId
-    for (const point of points) {
+  // First pass: count chunks per baseId across the entire filtered dataset
+  while (true) {
+    const page = await deps.scrollPointsPage(col, filter, PAGE_SIZE, offset);
+
+    for (const point of page.points) {
       const baseId = extractBaseId(point.id);
       const current = baseIdToTotalChunks.get(baseId) ?? 0;
       baseIdToTotalChunks.set(baseId, current + 1);
     }
-    
-    // Second pass: create tasks
-    for (const point of points) {
+
+    if (page.nextOffset === null) {
+      break;
+    }
+    offset = page.nextOffset;
+  }
+
+  // Second pass: build and enqueue tasks with correct totalChunks values
+  offset = null;
+  while (true) {
+    const page = await deps.scrollPointsPage(col, filter, PAGE_SIZE, offset);
+
+    for (const point of page.points) {
       const payload = point.payload;
       if (!payload) continue;
 
@@ -272,19 +294,21 @@ export async function enqueueEnrichment(
       
       // Batch enqueue when we have enough tasks
       if (pendingTasks.length >= BATCH_SIZE) {
-        await Promise.all(pendingTasks.map(t => deps.enqueueTask(t)));
+        await Promise.all(pendingTasks.map((t) => deps.enqueueTask(t)));
         enqueued += pendingTasks.length;
         pendingTasks.length = 0;
       }
     }
-    
-    // If we got fewer points than requested, we're done
-    hasMore = points.length >= PAGE_SIZE;
+
+    if (page.nextOffset === null) {
+      break;
+    }
+    offset = page.nextOffset;
   }
-  
+
   // Enqueue any remaining tasks
   if (pendingTasks.length > 0) {
-    await Promise.all(pendingTasks.map(t => deps.enqueueTask(t)));
+    await Promise.all(pendingTasks.map((t) => deps.enqueueTask(t)));
     enqueued += pendingTasks.length;
   }
 

@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { ensureCollection, qdrant, collectionName, getPointsByBaseId, scrollPoints, getPointsByIds } from "./qdrant.js";
+import { ensureCollection, qdrant, collectionName, getPointsByBaseId, scrollPoints, scrollPointsPage, getPointsByIds } from "./qdrant.js";
 import { embed } from "./ollama.js";
 import { registerAuth } from "./auth.js";
 import { registerErrorHandler } from "./errors.js";
@@ -68,6 +68,7 @@ export function buildApp() {
       getPointsByBaseId: async (collection, baseId) => {
         return getPointsByBaseId(collection, baseId);
       },
+      scrollPointsPage,
       scrollPoints,
       getQueueLength,
       enqueueTask,
@@ -83,7 +84,7 @@ export function buildApp() {
     }
     return getEnrichmentStats({
       collectionName,
-      scrollPoints,
+      scrollPointsPage,
       getQueueLength,
     });
   });
@@ -96,6 +97,7 @@ export function buildApp() {
     return enqueueEnrichmentService(body, {
       collectionName,
       getPointsByBaseId,
+      scrollPointsPage,
       scrollPoints,
       getQueueLength,
       enqueueTask,

@@ -37,6 +37,7 @@ describe("enrichment service", () => {
             },
           },
         ]),
+        scrollPointsPage: vi.fn(),
         scrollPoints: vi.fn(),
         getQueueLength: vi.fn(),
         enqueueTask: vi.fn(),
@@ -65,6 +66,7 @@ describe("enrichment service", () => {
           { id: "repo:file.ts:1", payload: { enrichmentStatus: "pending" } },
           { id: "repo:file.ts:2", payload: { enrichmentStatus: "processing" } },
         ]),
+        scrollPointsPage: vi.fn(),
         scrollPoints: vi.fn(),
         getQueueLength: vi.fn(),
         enqueueTask: vi.fn(),
@@ -85,6 +87,7 @@ describe("enrichment service", () => {
       const deps: EnrichmentDeps = {
         collectionName: vi.fn(() => "docs"),
         getPointsByBaseId: vi.fn(async () => []),
+        scrollPointsPage: vi.fn(),
         scrollPoints: vi.fn(),
         getQueueLength: vi.fn(),
         enqueueTask: vi.fn(),
@@ -100,14 +103,19 @@ describe("enrichment service", () => {
     it("returns queue and status counts", async () => {
       const deps = {
         collectionName: vi.fn(() => "docs"),
-        scrollPoints: vi.fn(async () => [
-          { id: "1", payload: { enrichmentStatus: "enriched" } },
-          { id: "2", payload: { enrichmentStatus: "enriched" } },
-          { id: "3", payload: { enrichmentStatus: "pending" } },
-          { id: "4", payload: { enrichmentStatus: "processing" } },
-          { id: "5", payload: { enrichmentStatus: "failed" } },
-          { id: "6", payload: { enrichmentStatus: "none" } },
-        ]),
+        scrollPointsPage: vi
+          .fn()
+          .mockResolvedValueOnce({
+            points: [
+              { id: "1", payload: { enrichmentStatus: "enriched" } },
+              { id: "2", payload: { enrichmentStatus: "enriched" } },
+              { id: "3", payload: { enrichmentStatus: "pending" } },
+              { id: "4", payload: { enrichmentStatus: "processing" } },
+              { id: "5", payload: { enrichmentStatus: "failed" } },
+              { id: "6", payload: { enrichmentStatus: "none" } },
+            ],
+            nextOffset: null,
+          }),
         getQueueLength: vi.fn(async (queueName: string) => {
           if (queueName === "enrichment:pending") return 10;
           if (queueName === "enrichment:dead-letter") return 2;
@@ -134,6 +142,62 @@ describe("enrichment service", () => {
       const deps: EnrichmentDeps = {
         collectionName: vi.fn(() => "docs"),
         getPointsByBaseId: vi.fn(),
+        scrollPointsPage: vi
+          .fn()
+          .mockResolvedValueOnce({
+            points: [
+              {
+                id: "repo:file1.ts:0",
+                payload: {
+                  enrichmentStatus: "pending",
+                  docType: "code",
+                  chunkIndex: 0,
+                  text: "test text",
+                  source: "file1.ts",
+                  tier1Meta: {},
+                },
+              },
+              {
+                id: "repo:file2.ts:0",
+                payload: {
+                  enrichmentStatus: "failed",
+                  docType: "code",
+                  chunkIndex: 0,
+                  text: "test text 2",
+                  source: "file2.ts",
+                  tier1Meta: {},
+                },
+              },
+            ],
+            nextOffset: null,
+          })
+          .mockResolvedValueOnce({
+            points: [
+              {
+                id: "repo:file1.ts:0",
+                payload: {
+                  enrichmentStatus: "pending",
+                  docType: "code",
+                  chunkIndex: 0,
+                  text: "test text",
+                  source: "file1.ts",
+                  tier1Meta: {},
+                },
+              },
+              {
+                id: "repo:file2.ts:0",
+                payload: {
+                  enrichmentStatus: "failed",
+                  docType: "code",
+                  chunkIndex: 0,
+                  text: "test text 2",
+                  source: "file2.ts",
+                  tier1Meta: {},
+                },
+              },
+            ],
+            nextOffset: null,
+          }),
         scrollPoints: vi.fn(async () => [
           {
             id: "repo:file1.ts:0",
@@ -174,6 +238,40 @@ describe("enrichment service", () => {
       const deps: EnrichmentDeps = {
         collectionName: vi.fn(() => "docs"),
         getPointsByBaseId: vi.fn(),
+        scrollPointsPage: vi
+          .fn()
+          .mockResolvedValueOnce({
+            points: [
+              {
+                id: "repo:file1.ts:0",
+                payload: {
+                  enrichmentStatus: "enriched",
+                  docType: "code",
+                  chunkIndex: 0,
+                  text: "test text",
+                  source: "file1.ts",
+                  tier1Meta: {},
+                },
+              },
+            ],
+            nextOffset: null,
+          })
+          .mockResolvedValueOnce({
+            points: [
+              {
+                id: "repo:file1.ts:0",
+                payload: {
+                  enrichmentStatus: "enriched",
+                  docType: "code",
+                  chunkIndex: 0,
+                  text: "test text",
+                  source: "file1.ts",
+                  tier1Meta: {},
+                },
+              },
+            ],
+            nextOffset: null,
+          }),
         scrollPoints: vi.fn(async () => [
           {
             id: "repo:file1.ts:0",

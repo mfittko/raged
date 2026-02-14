@@ -20,12 +20,35 @@ const DISTANCE: DistanceMetric = getDistance();
 
 export const qdrant = new QdrantClient({ url: QDRANT_URL });
 
+interface QdrantErrorWithStatus {
+  status?: number;
+  response?: {
+    status?: number;
+  };
+}
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  const maybe = error as QdrantErrorWithStatus;
+  if (typeof maybe.status === "number") {
+    return maybe.status;
+  }
+  if (typeof maybe.response?.status === "number") {
+    return maybe.response.status;
+  }
+
+  return undefined;
+}
+
 export async function ensureCollection(name = DEFAULT_COLLECTION) {
   const collections = await qdrant.getCollections();
   const exists = collections.collections?.some((c) => c.name === name);
-  if (exists) return;
-  
-  await qdrant.createCollection(name, { vectors: { size: VECTOR_SIZE, distance: DISTANCE } });
+  if (!exists) {
+    await qdrant.createCollection(name, { vectors: { size: VECTOR_SIZE, distance: DISTANCE } });
+  }
   
   // Create payload indexes for filterable fields to avoid full collection scans
   // Required indexes per AGENTS.md performance requirements
@@ -38,10 +61,17 @@ export async function ensureCollection(name = DEFAULT_COLLECTION) {
   ];
   
   for (const fieldName of payloadIndexes) {
-    await qdrant.createPayloadIndex(name, {
-      field_name: fieldName,
-      field_schema: "keyword",
-    });
+    try {
+      await qdrant.createPayloadIndex(name, {
+        field_name: fieldName,
+        field_schema: "keyword",
+      });
+    } catch (error: unknown) {
+      const status = getErrorStatus(error);
+      if (status !== 409) {
+        throw error;
+      }
+    }
   }
 }
 
@@ -125,6 +155,27 @@ export async function scrollPoints(
   }
 
   return allPoints;
+}
+
+export async function scrollPointsPage(
+  collection: string,
+  filter?: Record<string, unknown>,
+  limit = 100,
+  offset?: string | number | Record<string, unknown> | null,
+) {
+  const result = await qdrant.scroll(collection, {
+    filter,
+    limit,
+    ...(offset !== undefined && offset !== null ? { offset } : {}),
+  });
+
+  return {
+    points: result.points.map((p) => ({
+      id: String(p.id),
+      payload: p.payload as Record<string, unknown> | undefined,
+    })),
+    nextOffset: result.next_page_offset ?? null,
+  };
 }
 
 export async function getPointsByIds(

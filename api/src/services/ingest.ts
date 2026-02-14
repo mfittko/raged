@@ -58,14 +58,17 @@ export async function ingest(
     metadata?: Record<string, unknown>;
   }
   
-  const processedItems: ProcessedItem[] = request.items.map(item => ({
-    baseId: item.id ?? randomUUID(),
-    docType: detectDocType(item),
-    tier1Meta: extractTier1(item, detectDocType(item)),
-    chunks: chunkText(item.text),
-    source: item.source,
-    metadata: item.metadata,
-  }));
+  const processedItems: ProcessedItem[] = request.items.map((item) => {
+    const docType = detectDocType(item);
+    return {
+      baseId: item.id ?? randomUUID(),
+      docType,
+      tier1Meta: extractTier1(item, docType),
+      chunks: chunkText(item.text),
+      source: item.source,
+      metadata: item.metadata,
+    };
+  });
   
   let totalUpserted = 0;
 
