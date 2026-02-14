@@ -1,46 +1,86 @@
-# rag-stack (MVP: CLI + Skills + self-hosted RAG API)
+# rag-stack
 
-This repo ships a practical “memory” layer for coding agents:
-- **RAG API** (Fastify) backed by **Qdrant** + local embeddings via **Ollama**
-- **CLI** (`rag-index`) for indexing and querying (keeps heavy work outside the model loop)
-- **Claude Code Skill** that instructs Claude to use the CLI (token-efficient)
-- **Docker Compose** for local encapsulated deployment
-- **Helm** for Kubernetes deployment (Ingress + optional token auth)
-- **In-cluster indexing Job** (v0.5): run the same CLI close to the cluster/VPC, so laptops don’t upload repo contents
+A shared memory layer for AI coding agents — index repositories, embed code, and retrieve relevant context via semantic search.
 
-## Quickstart (local)
+```mermaid
+graph LR
+    Agent[AI Agent] -->|"rag-index query"| CLI[CLI]
+    CLI -->|HTTP| API[RAG API]
+    API -->|embed| Ollama
+    API -->|search| Qdrant
+
+    style API fill:#e1f5fe
+    style Qdrant fill:#f3e5f5
+    style Ollama fill:#e8f5e9
+```
+
+## What It Does
+
+1. **Index** a Git repository — the CLI clones it, chunks source files, sends them to the API
+2. **Embed** each chunk using a local model (Ollama + nomic-embed-text)
+3. **Store** embeddings in Qdrant (vector database)
+4. **Query** by natural language — the API embeds your question, finds the most similar chunks, returns them
+
+AI agents use this to retrieve grounded context without stuffing entire repos into their context window.
+
+## Quickstart
 
 ```bash
+# Start the stack
 docker compose up -d
-curl -s http://localhost:8080/healthz
-```
 
-(Optional) pull embedding model:
-```bash
+# Pull the embedding model (first time only)
 curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'
+
+# Verify
+curl -s http://localhost:8080/healthz
+# → {"ok":true}
 ```
 
-## CLI
+## Index a Repository
 
-Build:
 ```bash
 cd cli && npm install && npm run build
+
+node dist/index.js index \
+  --repo https://github.com/<org>/<repo>.git \
+  --api http://localhost:8080
 ```
 
-Index:
+## Query
+
 ```bash
-node dist/index.js index --repo https://github.com/<org>/<repo>.git --api http://localhost:8080
+node dist/index.js query \
+  --api http://localhost:8080 \
+  --q "authentication flow" \
+  --topK 5
 ```
 
-Query:
-```bash
-node dist/index.js query --api http://localhost:8080 --q "authentication flow" --topK 5
-```
+## Components
 
-## Remote (Helm + Ingress + token)
+| Component | Role | Tech |
+|-----------|------|------|
+| **RAG API** | Chunk, embed, store, search | Fastify, Node.js |
+| **Qdrant** | Vector storage and similarity search | Qdrant v1.10 |
+| **Ollama** | Local embedding model runtime | nomic-embed-text (768d) |
+| **CLI** | Index repos and query from terminal | Node.js, TypeScript |
+| **Helm Chart** | Kubernetes deployment | Helm 3 |
 
-See `docs/05-helm-remote.md`.
+## Documentation
 
-## In-cluster indexing (recommended for remote deployments)
+| Doc | Topic |
+|-----|-------|
+| [Vision & Roadmap](docs/00-vision.md) | Where rag-stack is headed |
+| [Architecture](docs/01-architecture.md) | Components, data flow, security |
+| [Local Development](docs/02-local-dev.md) | Docker Compose setup |
+| [CLI Reference](docs/03-cli.md) | Commands, flags, examples |
+| [Claude Code Skill](docs/04-claude-skills.md) | Using rag-stack with Claude Code |
+| [Helm Deployment](docs/05-helm-remote.md) | Kubernetes + Ingress + auth |
+| [Troubleshooting](docs/06-troubleshooting.md) | Common issues and fixes |
+| [In-Cluster Indexing](docs/07-indexing-in-cluster.md) | Indexing from inside Kubernetes |
+| [Contributing](docs/08-contributing.md) | Development setup and PR process |
+| [API Reference](docs/09-api-reference.md) | Endpoints, request/response formats |
 
-See `docs/07-indexing-in-cluster.md`.
+## License
+
+See [LICENSE](LICENSE).
