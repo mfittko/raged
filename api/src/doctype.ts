@@ -74,14 +74,19 @@ export function detectDocType(item: IngestItem): DocType {
 
   // 3. Source URL patterns
   const sourceLower = item.source.toLowerCase();
-  if (
-    sourceLower.includes("github.com") ||
-    sourceLower.includes("gitlab.com")
-  ) {
-    return "code";
-  }
-  if (sourceLower.includes("slack.com")) {
-    return "slack";
+  // Use URL parsing for more secure host detection
+  try {
+    const url = new URL(sourceLower);
+    const hostname = url.hostname;
+    if (hostname === "github.com" || hostname.endsWith(".github.com") ||
+        hostname === "gitlab.com" || hostname.endsWith(".gitlab.com")) {
+      return "code";
+    }
+    if (hostname === "slack.com" || hostname.endsWith(".slack.com")) {
+      return "slack";
+    }
+  } catch {
+    // Not a valid URL, fall through to other detection methods
   }
 
   // 4. Content sniffing
