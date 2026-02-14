@@ -15,7 +15,7 @@ type IngestItem = {
   enrich?: boolean;
 };
 
-function detectDocType(filePath: string, content?: Buffer): string {
+function detectDocType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   const extMap: Record<string, string> = {
     ".md": "text", ".markdown": "text", ".txt": "text",
@@ -26,8 +26,8 @@ function detectDocType(filePath: string, content?: Buffer): string {
     ".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image",
   };
   
-  // Check for Slack export structure
-  if (filePath.includes("slack") && ext === ".json") {
+  // Check for Slack export structure (case-insensitive)
+  if (filePath.toLowerCase().includes("slack") && ext === ".json") {
     return "slack";
   }
   
@@ -37,18 +37,29 @@ function detectDocType(filePath: string, content?: Buffer): string {
 async function readFileContent(filePath: string, docType: string): Promise<{ text: string; metadata?: Record<string, any> }> {
   if (docType === "pdf") {
     const buffer = await fs.readFile(filePath);
-    // Dynamic import to handle module resolution
-    const pdfModule: any = await import("pdf-parse");
-    const parsePdf = pdfModule.default || pdfModule;
-    const data = await parsePdf(buffer);
-    return {
-      text: data.text,
-      metadata: {
-        title: data.info?.Title,
-        author: data.info?.Author,
-        pageCount: data.numpages,
-      },
-    };
+    try {
+      // Dynamic import to handle module resolution
+      const pdfModule: any = await import("pdf-parse");
+      const parsePdf = pdfModule.default || pdfModule;
+      const data = await parsePdf(buffer);
+      return {
+        text: data.text,
+        metadata: {
+          title: data.info?.Title,
+          author: data.info?.Author,
+          pageCount: data.numpages,
+        },
+      };
+    } catch (error: any) {
+      const code = error && typeof error === "object" ? error.code : undefined;
+      if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
+        throw new Error(
+          "pdf-parse package is required to process PDF files. Install it with: npm install pdf-parse"
+        );
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to process PDF file "${filePath}": ${message}`);
+    }
   }
   
   if (docType === "image") {
@@ -65,7 +76,7 @@ async function readFileContent(filePath: string, docType: string): Promise<{ tex
         metadata.exif = meta.exif;
       }
     } catch (e) {
-      // Ignore EXIF errors
+      console.warn(`[rag-index] Warning: Failed to extract image metadata for "${filePath}"`);
     }
     
     return { text: base64, metadata };
@@ -299,11 +310,33 @@ async function cmdIngest(options: any) {
   for (const filePath of filesToProcess) {
     try {
       const docType = docTypeOverride || detectDocType(filePath);
+      
+      // Skip unsupported file types when no override is provided
+      if (!docTypeOverride && docType === "text") {
+        const ext = path.extname(filePath).toLowerCase();
+        const supportedExts = new Set([
+          ".txt", ".md", ".markdown", ".json", ".yaml", ".yml", ".csv",
+          ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java",
+          ".cpp", ".c", ".html", ".htm", ".css", ".toml",
+          ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"
+        ]);
+        
+        if (ext && !supportedExts.has(ext)) {
+          console.warn(`[rag-index] Skipping unsupported file type (${ext}): ${filePath}`);
+          continue;
+        }
+      }
+      
       const { text, metadata = {} } = await readFileContent(filePath, docType);
+      
+      // Warn about large images
+      if (docType === "image" && text.length > 1000000) {
+        console.warn(`[rag-index] Warning: Large image file (${Math.round(text.length / 1024)}KB) will be base64-encoded: ${filePath}`);
+      }
       
       const fileName = path.basename(filePath);
       const item: IngestItem = {
-        id: `file:${fileName}`,
+        id: `file:${filePath.replace(/[/\\]/g, ":")}`,
         text,
         source: filePath,
         metadata: { ...metadata, fileName, filePath },
@@ -338,7 +371,7 @@ async function cmdEnrich(options: any) {
   const showFailed = Boolean(options.showFailed);
   const retryFailed = Boolean(options.retryFailed);
 
-  if (showFailed || !retryFailed) {
+  if (showFailed) {
     // Get enrichment stats
     const res = await fetch(`${api.replace(/\/$/, "")}/enrichment/stats`, {
       method: "GET",
@@ -363,9 +396,26 @@ async function cmdEnrich(options: any) {
     console.log(`  Processing: ${stats.totals.processing}`);
     console.log(`  None: ${stats.totals.none}`);
     console.log("");
+    return;
   }
 
-  if (!showFailed) {
+  if (retryFailed) {
+    // Retry failed enrichment tasks by re-enqueuing them
+    console.log("[rag-index] Retrying failed enrichment tasks...");
+    const res = await fetch(`${api.replace(/\/$/, "")}/enrichment/enqueue`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authHeaders(token) },
+      body: JSON.stringify({ collection, force: true }),
+    });
+    
+    if (!res.ok) {
+      console.error(`Failed to retry failed enrichments: ${res.status} ${await res.text()}`);
+      process.exit(1);
+    }
+    
+    const result = await res.json();
+    console.log(`[rag-index] Re-enqueued ${result.enqueued} tasks (including failed ones).`);
+  } else {
     // Enqueue enrichment tasks
     const res = await fetch(`${api.replace(/\/$/, "")}/enrichment/enqueue`, {
       method: "POST",
