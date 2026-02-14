@@ -1,0 +1,81 @@
+"""Tests for tier-2 NLP extraction."""
+import pytest
+from src.tier2 import extract_entities, extract_keywords, detect_language
+
+
+def test_extract_entities():
+    """Test entity extraction from text."""
+    text = "Apple Inc. was founded by Steve Jobs in Cupertino, California on April 1, 1976."
+    entities = extract_entities(text)
+    
+    # Should find entities for organization, person, location, date
+    assert len(entities) > 0
+    assert any(e["label"] in ["ORG", "PERSON", "GPE", "DATE"] for e in entities)
+    
+    # Check we got Apple and Steve Jobs
+    entity_texts = [e["text"] for e in entities]
+    assert any("Apple" in text for text in entity_texts)
+    assert any("Jobs" in text or "Steve Jobs" in text for text in entity_texts)
+
+
+def test_extract_entities_empty():
+    """Test entity extraction with empty text."""
+    assert extract_entities("") == []
+    assert extract_entities("   ") == []
+
+
+def test_extract_keywords():
+    """Test keyword extraction from text."""
+    text = """
+    Machine learning is a subset of artificial intelligence that focuses on
+    building systems that can learn from data. Deep learning is a type of
+    machine learning that uses neural networks with multiple layers.
+    """
+    keywords = extract_keywords(text, top_n=5)
+    
+    # Should return some keywords
+    assert len(keywords) > 0
+    assert len(keywords) <= 5
+    
+    # Keywords should be strings
+    assert all(isinstance(k, str) for k in keywords)
+
+
+def test_extract_keywords_empty():
+    """Test keyword extraction with empty text."""
+    assert extract_keywords("") == []
+    assert extract_keywords("   ") == []
+
+
+def test_detect_language_english():
+    """Test language detection for English text."""
+    text = "This is a sentence in English. It should be detected correctly."
+    lang = detect_language(text)
+    assert lang == "en"
+
+
+def test_detect_language_spanish():
+    """Test language detection for Spanish text."""
+    text = "Esta es una frase en español. Debe ser detectada correctamente."
+    lang = detect_language(text)
+    assert lang == "es"
+
+
+def test_detect_language_french():
+    """Test language detection for French text."""
+    text = "Ceci est une phrase en français. Elle devrait être détectée correctement."
+    lang = detect_language(text)
+    assert lang == "fr"
+
+
+def test_detect_language_empty():
+    """Test language detection with empty text."""
+    assert detect_language("") == "unknown"
+    assert detect_language("   ") == "unknown"
+
+
+def test_detect_language_short():
+    """Test language detection with very short text."""
+    # Short text might not be reliably detected, but should not crash
+    result = detect_language("Hi")
+    assert isinstance(result, str)
