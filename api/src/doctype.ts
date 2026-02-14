@@ -101,7 +101,9 @@ export function detectDocType(item: IngestItem): DocType {
   }
 
   // Slack: JSON with messages array
-  if (contentStart.trim().startsWith("{")) {
+  // Guard against parsing large JSON payloads
+  const MAX_JSON_SIZE = 100_000; // 100KB
+  if (contentStart.trimStart().startsWith("{") && item.text.length <= MAX_JSON_SIZE) {
     try {
       const parsed = JSON.parse(item.text);
       if (parsed.messages && Array.isArray(parsed.messages)) {
