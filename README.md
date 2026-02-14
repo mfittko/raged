@@ -1,6 +1,6 @@
 # rag-stack
 
-A shared memory layer for AI coding agents — index repositories, embed code, and retrieve relevant context via semantic search.
+A semantic knowledge base for AI agents — ingest any text (code, docs, articles, transcripts, notes), embed it locally, and retrieve relevant context via natural-language search.
 
 ```mermaid
 graph LR
@@ -16,12 +16,12 @@ graph LR
 
 ## What It Does
 
-1. **Index** a Git repository — the CLI clones it, chunks source files, sends them to the API
+1. **Ingest** any text — send content to the API via HTTP, or use the CLI to bulk-index Git repositories
 2. **Embed** each chunk using a local model (Ollama + nomic-embed-text)
 3. **Store** embeddings in Qdrant (vector database)
 4. **Query** by natural language — the API embeds your question, finds the most similar chunks, returns them
 
-AI agents use this to retrieve grounded context without stuffing entire repos into their context window.
+AI agents (Claude Code, OpenClaw, or any HTTP/CLI-capable agent) use this to retrieve grounded context without stuffing entire knowledge bases into their context window.
 
 ## Quickstart
 
@@ -37,7 +37,23 @@ curl -s http://localhost:8080/healthz
 # → {"ok":true}
 ```
 
-## Index a Repository
+## Ingest Content
+
+Via the HTTP API (any text):
+
+```bash
+curl -s -X POST http://localhost:8080/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [{
+      "id": "my-doc",
+      "text": "Your text content here...",
+      "source": "notes/meeting.md"
+    }]
+  }'
+```
+
+Via the CLI (bulk Git repository indexing):
 
 ```bash
 cd cli && npm install && npm run build
@@ -50,6 +66,11 @@ node dist/index.js index \
 ## Query
 
 ```bash
+curl -s -X POST http://localhost:8080/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "authentication flow", "topK": 5}'
+
+# Or via CLI
 node dist/index.js query \
   --api http://localhost:8080 \
   --q "authentication flow" \
@@ -63,7 +84,7 @@ node dist/index.js query \
 | **RAG API** | Chunk, embed, store, search | Fastify, Node.js |
 | **Qdrant** | Vector storage and similarity search | Qdrant v1.10 |
 | **Ollama** | Local embedding model runtime | nomic-embed-text (768d) |
-| **CLI** | Index repos and query from terminal | Node.js, TypeScript |
+| **CLI** | Bulk-index Git repos and query from terminal | Node.js, TypeScript |
 | **Helm Chart** | Kubernetes deployment | Helm 3 |
 
 ## Documentation
@@ -74,7 +95,7 @@ node dist/index.js query \
 | [Architecture](docs/01-architecture.md) | Components, data flow, security |
 | [Local Development](docs/02-local-dev.md) | Docker Compose setup |
 | [CLI Reference](docs/03-cli.md) | Commands, flags, examples |
-| [Claude Code Skill](docs/04-claude-skills.md) | Using rag-stack with Claude Code |
+| [Agent Integrations](docs/04-claude-skills.md) | Using rag-stack with Claude Code, OpenClaw, etc. |
 | [Helm Deployment](docs/05-helm-remote.md) | Kubernetes + Ingress + auth |
 | [Troubleshooting](docs/06-troubleshooting.md) | Common issues and fixes |
 | [In-Cluster Indexing](docs/07-indexing-in-cluster.md) | Indexing from inside Kubernetes |

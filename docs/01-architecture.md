@@ -27,7 +27,7 @@ graph TD
 
 Stateless HTTP service exposing two core endpoints:
 
-- `POST /ingest` — Receives text items, chunks them, embeds each chunk via Ollama, upserts vectors into Qdrant
+- `POST /ingest` — Receives any text items (code, docs, articles, etc.), chunks them, embeds each chunk via Ollama, upserts vectors into Qdrant
 - `POST /query` — Embeds the query text, performs similarity search in Qdrant, returns ranked results
 - `GET /healthz` — Always unauthenticated, returns `{ ok: true }`
 
@@ -39,7 +39,7 @@ Metadata payload per point:
 - `text` — the original chunk text
 - `source` — source URL or path
 - `chunkIndex` — position of chunk within the original document
-- `repoId`, `repoUrl`, `path`, `lang`, `bytes` — indexing metadata
+- `repoId`, `repoUrl`, `path`, `lang`, `bytes` — indexing metadata (present when ingested via CLI; custom metadata keys supported for other content types)
 
 ### Ollama (Embedding Runtime)
 
@@ -47,7 +47,7 @@ Runs the `nomic-embed-text` model locally. The API calls Ollama's `/api/embeddin
 
 ### CLI (rag-index)
 
-Command-line tool for indexing and querying. Clones Git repos to a temp directory, scans for text files, sends them in batches to the API's `/ingest` endpoint.
+Command-line tool for bulk Git repository indexing and querying. Clones repos to a temp directory, scans for text files, sends them in batches to the API's `/ingest` endpoint. For non-repo content, use the HTTP API directly.
 
 ## Index Data Flow
 

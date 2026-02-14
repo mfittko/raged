@@ -1,8 +1,10 @@
-# Claude Code Skill
+# Agent Integrations
 
-rag-stack includes a Claude Code skill that lets Claude query indexed repositories for relevant context.
+rag-stack is agent-agnostic. Any agent that can call HTTP or execute shell commands can use it as a knowledge base. This page covers built-in integrations.
 
-## How It Works
+## Claude Code
+
+### How It Works
 
 ```mermaid
 sequenceDiagram
@@ -19,38 +21,34 @@ sequenceDiagram
     API-->>CLI: Relevant chunks
     CLI-->>S: Formatted results
     S-->>C: Context injected
-    C-->>U: Grounded answer with code references
+    C-->>U: Grounded answer with references
 ```
 
-## Skill Location
+### Skill Location
 
 ```
 .claude/skills/rag-memory/SKILL.md
 ```
 
-## Setup
+### Setup
 
-### Local
-
-If running rag-stack via Docker Compose on the same machine:
+**Local** (Docker Compose on the same machine):
 
 ```bash
 # No configuration needed — defaults work
 # API at http://localhost:8080, no auth
 ```
 
-### Remote
-
-Set environment variables for your shell (or in your Claude Code configuration):
+**Remote:**
 
 ```bash
 export RAG_API_URL=https://rag.example.com
 export RAG_API_TOKEN=your-token-here
 ```
 
-## Usage
+### Usage
 
-The skill is invoked automatically when Claude determines it needs codebase context. You can also ask directly:
+The skill is invoked automatically when Claude determines it needs context. You can also ask directly:
 
 > "Use rag-memory to find how authentication is implemented in the fastify-docs collection"
 
@@ -63,19 +61,74 @@ rag-index query \
   --token "${RAG_API_TOKEN:-}"
 ```
 
-## Multi-Agent Context
+## OpenClaw
 
-rag-stack is designed to be agent-agnostic. While the current skill targets Claude Code, any agent that can execute shell commands can use the CLI:
+### How It Works
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant OC as OpenClaw
+    participant S as rag-stack Skill
+    participant API as RAG API
+
+    U->>OC: "Find docs about deployment strategy"
+    OC->>S: Activate skill
+    S->>API: POST /query (via curl)
+    API-->>S: Relevant chunks
+    S-->>OC: Results formatted
+    OC-->>U: Grounded answer with sources
+```
+
+### Skill Location
+
+```
+~/.openclaw/skills/rag-stack/SKILL.md
+```
+
+### Setup
+
+Install the skill (from the rag-stack repo):
 
 ```bash
-# Any agent can query
+ln -s /path/to/rag-stack/skill ~/.openclaw/skills/rag-stack
+```
+
+Configure in `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "skills": {
+    "entries": {
+      "rag-stack": {
+        "enabled": true,
+        "env": {
+          "RAG_STACK_URL": "http://localhost:8080",
+          "RAG_STACK_TOKEN": ""
+        }
+      }
+    }
+  }
+}
+```
+
+### Usage
+
+OpenClaw activates the skill based on the description in SKILL.md. The agent uses `curl` to call the rag-stack API directly.
+
+## Other Agents
+
+Any agent that can call HTTP or execute shell commands can use rag-stack:
+
+```bash
+# Via CLI
 rag-index query --api <url> --q "<question>" --topK 5
 
-# Or call the HTTP API directly
+# Via HTTP API
 curl -X POST https://rag.example.com/query \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
   -d '{"query": "authentication flow", "topK": 5}'
 ```
 
-The v2.0 roadmap includes native SDK/client libraries for TypeScript, Python, and Go — eliminating the CLI dependency for non-Claude agents.
+The v2.0 roadmap includes native SDK/client libraries for TypeScript, Python, and Go — eliminating the CLI dependency.
