@@ -1,6 +1,8 @@
 # Agent Integrations
 
-rag-stack is agent-agnostic. Any agent that can call HTTP or execute shell commands can use it as a knowledge base. This page covers built-in integrations.
+rag-stack is agent-agnostic and works with any agent that can call HTTP or execute shell commands.
+
+This page covers built-in integrations.
 
 ## Claude Code
 

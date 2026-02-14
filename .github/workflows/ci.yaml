@@ -54,3 +54,10 @@ jobs:
         with:
           version: v3.15.4
       - run: helm lint ./chart
+
+  skill-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run skill tests
+        run: node --test skill/scripts/check-connection.test.mjs

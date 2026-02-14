@@ -1,12 +1,12 @@
 # Vision
 
-rag-stack is a hybrid vector + graph knowledge base for AI agents. It combines semantic similarity search (vector DB) with relationship-aware retrieval (graph DB) to give agents grounded context from any text content: code, documentation, articles, emails, transcripts, or notes.
+rag-stack is a vector-first knowledge base for AI agents with relationship-aware graph retrieval planned on the roadmap.
 
 ## Why
 
 AI agents work best with relevant context, but stuffing entire knowledge bases into a model's context window is wasteful and expensive. rag-stack keeps the heavy retrieval work outside the model loop: ingest once, query many times, return only what's relevant.
 
-Vector search alone finds *semantically similar* content. But real knowledge has structure — docs reference code, emails discuss designs, repos depend on libraries. A graph layer captures these relationships, enabling retrieval that follows connections, not just similarity. The combination is more powerful than either alone:
+Vector search alone finds *semantically similar* content. But real knowledge has structure — docs reference code, emails discuss designs, repos depend on libraries. A planned graph layer will capture these relationships, enabling retrieval that follows connections, not just similarity. The roadmap combination is more powerful than either alone:
 
 | Query type | Vector DB | + Graph DB |
 |-----------|----------|------------|
@@ -26,9 +26,9 @@ graph TD
     CLI -->|HTTP| API[RAG API<br/>Fastify]
     API -->|embed| OL[Ollama<br/>nomic-embed-text]
     API -->|similarity search| QD[Qdrant<br/>Vector DB]
-    API -->|traverse relationships| GD[Graph DB]
-    API -->|hybrid retrieval| QD
-    API -->|hybrid retrieval| GD
+    API -->|planned traversal| GD[Graph DB (planned)]
+    API -->|planned hybrid retrieval| QD
+    API -->|planned hybrid retrieval| GD
     CLI -->|ingest| API
 
     style API fill:#e1f5fe

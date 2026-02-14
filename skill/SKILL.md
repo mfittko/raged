@@ -190,38 +190,22 @@ Send any text directly to the `/ingest` endpoint:
 
 ```bash
 # Ingest a local file (doc, article, transcript, code, etc.)
+text=$(jq -Rs . < notes/2026-02-14-standup.md)
+
 curl -s -X POST "$RAG_STACK_URL/ingest" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $RAG_STACK_TOKEN" \
-  -d '{
-    "collection": "docs",
-    "items": [
-      {
-        "id": "meeting-notes:2026-02-14",
-        "text": "'"$(cat notes/2026-02-14-standup.md)"'",
-        "source": "notes/2026-02-14-standup.md",
-        "metadata": {"type": "meeting-notes", "date": "2026-02-14"}
-      }
-    ]
-  }' | jq .
+  -d "{\"collection\":\"docs\",\"items\":[{\"id\":\"meeting-notes:2026-02-14\",\"text\":${text},\"source\":\"notes/2026-02-14-standup.md\",\"metadata\":{\"type\":\"meeting-notes\",\"date\":\"2026-02-14\"}}]}" | jq .
 ```
 
 ```bash
 # Ingest a source file
+text=$(jq -Rs . < src/main.ts)
+
 curl -s -X POST "$RAG_STACK_URL/ingest" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $RAG_STACK_TOKEN" \
-  -d '{
-    "collection": "docs",
-    "items": [
-      {
-        "id": "my-repo:src/main.ts",
-        "text": "'"$(cat src/main.ts)"'",
-        "source": "https://github.com/org/repo#src/main.ts",
-        "metadata": {"repoId": "my-repo", "path": "src/main.ts", "lang": "ts"}
-      }
-    ]
-  }' | jq .
+  -d "{\"collection\":\"docs\",\"items\":[{\"id\":\"my-repo:src/main.ts\",\"text\":${text},\"source\":\"https://github.com/org/repo#src/main.ts\",\"metadata\":{\"repoId\":\"my-repo\",\"path\":\"src/main.ts\",\"lang\":\"ts\"}}]}" | jq .
 ```
 
 Response: `{"ok": true, "upserted": <chunk_count>}`

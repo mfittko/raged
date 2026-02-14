@@ -1,3 +1,6 @@
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
 /**
  * Pre-flight check: verifies rag-stack is running and responsive.
  * Used by the OpenClaw agent before issuing query/index commands.
@@ -22,14 +25,18 @@ export async function checkConnection(url, fetchFn = fetch) {
     }
     return { ok: true, url: baseUrl };
   } catch (err) {
-    return { ok: false, url: baseUrl, error: err.message };
+    return {
+      ok: false,
+      url: baseUrl,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
 // CLI entry point
-const isMain =
-  import.meta.url === `file://${process.argv[1]}` ||
-  process.argv[1]?.endsWith("/check-connection.mjs");
+const entryArg = process.argv[1];
+const entryUrl = entryArg ? pathToFileURL(resolve(entryArg)).href : "";
+const isMain = import.meta.url === entryUrl;
 
 if (isMain) {
   const url = process.argv[2] || process.env.RAG_STACK_URL || "http://localhost:8080";

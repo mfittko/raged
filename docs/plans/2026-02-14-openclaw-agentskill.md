@@ -1,6 +1,6 @@
 # OpenClaw AgentSkill for rag-stack — Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Note for contributors:** This implementation plan is intended to be followed step by step.
 
 **Goal:** Build an OpenClaw AgentSkill that enables OpenClaw agents to index Git repositories and query code context via rag-stack's semantic search API.
 

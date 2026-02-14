@@ -1,6 +1,6 @@
 # rag-stack
 
-A hybrid vector + graph knowledge base for AI agents — ingest any text (code, docs, articles, transcripts, notes), embed it locally, and retrieve relevant context via semantic search and relationship traversal.
+A vector-first knowledge base for AI agents — ingest any text (code, docs, articles, transcripts, notes), embed it locally, and retrieve relevant context via semantic search, with graph traversal planned on the roadmap.
 
 ```mermaid
 graph LR
@@ -18,10 +18,10 @@ graph LR
 
 1. **Ingest** any text — send content to the API via HTTP, or use the CLI to bulk-index Git repositories
 2. **Embed** each chunk using a local model (Ollama + nomic-embed-text)
-3. **Store** embeddings in Qdrant (vector DB) with relationships in a graph layer
-4. **Query** by natural language — semantic similarity + relationship traversal for context-rich results
+3. **Store** embeddings in Qdrant (vector DB)
+4. **Query** by natural language — semantic similarity search for context-rich results
 
-AI agents (Claude Code, OpenClaw, or any HTTP/CLI-capable agent) use this to retrieve grounded context without stuffing entire knowledge bases into their context window. Vector search finds *what's relevant*; the graph layer shows *what's connected*.
+AI agents (Claude Code, OpenClaw, or any HTTP/CLI-capable agent) use this to retrieve grounded context without stuffing entire knowledge bases into their context window. Vector search finds *what's relevant* today; graph relationships are planned in the roadmap.
 
 ## Quickstart
 
