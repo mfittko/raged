@@ -17,8 +17,8 @@ describe("enrichment service", () => {
             payload: {
               enrichmentStatus: "enriched",
               enrichedAt: "2026-02-14T10:00:00Z",
-              tier2Meta: { entities: [], keywords: [] },
-              tier3Meta: { summary: "test" },
+              tier2: { entities: [], keywords: [] },
+              tier3: { summary: "test" },
             },
           },
           {
@@ -26,7 +26,7 @@ describe("enrichment service", () => {
             payload: {
               enrichmentStatus: "enriched",
               enrichedAt: "2026-02-14T10:05:00Z",
-              tier2Meta: { entities: [], keywords: [] },
+              tier2: { entities: [], keywords: [] },
             },
           },
           {
@@ -51,6 +51,9 @@ describe("enrichment service", () => {
       expect(result.chunks.total).toBe(3);
       expect(result.chunks.enriched).toBe(3);
       expect(result.extractedAt).toBe("2026-02-14T10:05:00Z");
+      // Verify metadata is returned from tier2/tier3
+      expect(result.metadata.tier2).toEqual({ entities: [], keywords: [] });
+      expect(result.metadata.tier3).toEqual({ summary: "test" });
     });
 
     it("returns mixed status when chunks are in different states", async () => {

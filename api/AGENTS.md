@@ -58,3 +58,7 @@ All configuration is via environment variables. Document every env var in this f
 | `EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
 | `PORT` | `8080` | API listen port |
 | `RAG_API_TOKEN` | _(empty)_ | Bearer token for auth (empty = auth disabled) |
+| `REDIS_URL` | _(empty)_ | Redis connection URL for enrichment queue (empty = enrichment disabled) |
+| `NEO4J_URL` | _(empty)_ | Neo4j connection URL (e.g., `bolt://neo4j:7687`) (empty = graph disabled) |
+| `NEO4J_USER` | `neo4j` | Neo4j username |
+| `NEO4J_PASSWORD` | _(empty)_ | Neo4j password (empty = graph disabled) |
