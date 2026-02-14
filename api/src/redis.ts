@@ -64,5 +64,6 @@ export async function closeRedis(): Promise<void> {
   if (redisClient) {
     await redisClient.quit();
     redisClient = null;
+    connectPromise = null;
   }
 }

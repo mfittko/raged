@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chunkText } from "../chunking.js";
 import { detectDocType, type DocType, type IngestItem } from "../doctype.js";
 import { extractTier1 } from "../extractors/index.js";
-import { enqueueEnrichment, isEnrichmentEnabled } from "../redis.js";
+import { enqueueEnrichment, isEnrichmentEnabled, type EnrichmentTask } from "../redis.js";
 
 export interface IngestRequest {
   collection?: string;
@@ -103,7 +103,7 @@ export async function ingest(
 
   // Enqueue enrichment tasks
   if (shouldEnrich) {
-    const tasks = [];
+    const tasks: EnrichmentTask[] = [];
     for (let i = 0; i < allChunks.length; i++) {
       const info = chunkInfos[i];
       tasks.push({

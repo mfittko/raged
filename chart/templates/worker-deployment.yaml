@@ -21,12 +21,20 @@ spec:
           imagePullPolicy: {{ .Values.enrichment.worker.image.pullPolicy }}
           envFrom:
             - configMapRef: { name: {{ .Release.Name }}-worker-config }
+            {{- if or .Values.enrichment.worker.extractor.anthropicApiKey .Values.enrichment.worker.extractor.openaiApiKey }}
+            - secretRef: { name: {{ .Release.Name }}-worker-secret }
+            {{- end }}
           env:
             - name: NEO4J_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Release.Name }}-neo4j-secret
                   key: NEO4J_PASSWORD
+            - name: NEO4J_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-neo4j-secret
+                  key: NEO4J_AUTH
           {{- if .Values.enrichment.worker.resources }}
           resources: {{- toYaml .Values.enrichment.worker.resources | nindent 12 }}
           {{- end }}

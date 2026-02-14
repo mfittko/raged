@@ -16,10 +16,4 @@ data:
   EXTRACTOR_MODEL_CAPABLE: "{{ .Values.enrichment.worker.extractor.modelCapable }}"
   EXTRACTOR_MODEL_VISION: "{{ .Values.enrichment.worker.extractor.modelVision }}"
   WORKER_CONCURRENCY: "{{ .Values.enrichment.worker.concurrency }}"
-  {{- if .Values.enrichment.worker.extractor.anthropicApiKey }}
-  ANTHROPIC_API_KEY: "{{ .Values.enrichment.worker.extractor.anthropicApiKey }}"
-  {{- end }}
-  {{- if .Values.enrichment.worker.extractor.openaiApiKey }}
-  OPENAI_API_KEY: "{{ .Values.enrichment.worker.extractor.openaiApiKey }}"
-  {{- end }}
 {{- end }}

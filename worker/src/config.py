@@ -20,6 +20,8 @@ MAX_RETRIES = 3
 QUEUE_NAME = "enrichment:pending"
 DEAD_LETTER_QUEUE = "enrichment:dead-letter"
 
-# Only validate Neo4j password if Neo4j URL is explicitly configured (non-default)
-if NEO4J_URL != "bolt://localhost:7687" and not NEO4J_PASSWORD:
-    raise RuntimeError("NEO4J_PASSWORD environment variable must be set when NEO4J_URL is configured")
+# Only validate Neo4j password if authentication is required
+# NEO4J_AUTH=none means auth is disabled
+NEO4J_AUTH = os.environ.get("NEO4J_AUTH", "")
+if NEO4J_AUTH and NEO4J_AUTH != "none" and not NEO4J_PASSWORD:
+    raise RuntimeError("NEO4J_PASSWORD environment variable must be set when Neo4j authentication is enabled")
