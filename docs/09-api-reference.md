@@ -57,6 +57,8 @@ Chunk, embed, and store text items in a Qdrant collection.
 | `items[].text` | string | Yes | Full text content to chunk and embed |
 | `items[].source` | string | Yes | Source identifier (URL, path, etc.) |
 | `items[].metadata` | object | No | Additional metadata stored with each chunk |
+| `items[].docType` | string | No | Document type (e.g., `code`, `text`, `pdf`, `image`, `slack`) for type-specific extraction |
+| `items[].enrich` | boolean | No | Enable async enrichment (default: `true` when enrichment is enabled) |
 
 **Response:**
 ```json
@@ -73,10 +75,13 @@ Chunk, embed, and store text items in a Qdrant collection.
 
 **Behavior:**
 1. Creates the collection if it doesn't exist (768d vectors, cosine distance)
-2. Splits each item's text into chunks (~1800 characters, split on line boundaries)
-3. Embeds each chunk via Ollama
-4. Upserts all chunks into Qdrant with payload: `{ text, source, chunkIndex, ...metadata }`
-5. Chunk IDs follow the pattern `<baseId>:<chunkIndex>`
+2. Auto-detects document type if `docType` not provided
+3. Runs tier-1 metadata extraction (heuristic/AST/EXIF based on type)
+4. Splits each item's text into chunks (~1800 characters, split on line boundaries)
+5. Embeds each chunk via Ollama
+6. Upserts all chunks into Qdrant with payload: `{ text, source, chunkIndex, enrichmentStatus, ...metadata }`
+7. If `enrich: true` and enrichment is enabled, enqueues async enrichment task to Redis
+8. Chunk IDs follow the pattern `<baseId>:<chunkIndex>`
 
 ---
 

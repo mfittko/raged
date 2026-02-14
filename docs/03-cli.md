@@ -1,6 +1,6 @@
 # CLI (rag-index)
 
-Command-line tool for indexing Git repositories and querying the RAG API.
+Command-line tool for indexing Git repositories, ingesting arbitrary files, and querying the RAG API.
 
 ## Build
 
@@ -33,6 +33,9 @@ node dist/index.js index --repo <git-url> [options]
 | `--maxFiles` | `4000` | Maximum files to process |
 | `--maxBytes` | `500000` | Maximum file size in bytes |
 | `--keep` | `false` | Keep the cloned temp directory |
+| `--enrich` | `true` | Enable async enrichment |
+| `--no-enrich` | - | Disable async enrichment |
+| `--doc-type` | _(auto-detect)_ | Override document type detection |
 
 ### query
 
@@ -52,6 +55,98 @@ node dist/index.js query --q "<search text>" [options]
 | `--pathPrefix` | _(none)_ | Filter by file path prefix |
 | `--lang` | _(none)_ | Filter by language |
 | `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+
+### ingest
+
+Ingest arbitrary files (PDFs, images, text, Slack exports) into the RAG API.
+
+```bash
+node dist/index.js ingest --file <path> [options]
+node dist/index.js ingest --dir <path> [options]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--file` | - | Single file to ingest (mutually exclusive with --dir) |
+| `--dir` | - | Directory to ingest (mutually exclusive with --file) |
+| `--api` | `http://localhost:8080` | RAG API URL |
+| `--collection` | `docs` | Qdrant collection name |
+| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+| `--enrich` | `true` | Enable async enrichment |
+| `--no-enrich` | - | Disable async enrichment |
+| `--doc-type` | _(auto-detect)_ | Override document type (`code`, `text`, `pdf`, `image`, `slack`) |
+
+**Supported file types:**
+- **Text/Code**: `.md`, `.txt`, `.ts`, `.js`, `.py`, `.go`, etc. — read as UTF-8
+- **PDFs**: `.pdf` — extracted text via pdf-parse with metadata (title, author, pageCount)
+- **Images**: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` — base64-encoded with EXIF metadata
+- **Slack exports**: JSON files in Slack export format
+
+### enrich
+
+Trigger and monitor async enrichment tasks.
+
+```bash
+node dist/index.js enrich [options]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--api` | `http://localhost:8080` | RAG API URL |
+| `--collection` | `docs` | Qdrant collection name |
+| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+| `--force` | `false` | Re-enqueue already-enriched items |
+| `--show-failed` | `false` | Show failed enrichment stats only |
+| `--retry-failed` | `false` | Retry failed enrichments |
+
+**Examples:**
+
+```bash
+# Show enrichment stats
+node dist/index.js enrich --show-failed
+
+# Trigger enrichment for pending items
+node dist/index.js enrich
+
+# Force re-enrichment of all items
+node dist/index.js enrich --force
+```
+
+### graph
+
+Query the knowledge graph for entity information.
+
+```bash
+node dist/index.js graph --entity <name> [options]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--entity` | _(required)_ | Entity name to look up |
+| `--api` | `http://localhost:8080` | RAG API URL |
+| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+
+**Example:**
+
+```bash
+node dist/index.js graph --entity "AuthService"
+```
+
+**Output:**
+```
+=== Entity: AuthService ===
+Type: class
+Description: Handles user authentication
+
+=== Connections (2) ===
+  → JWT (uses)
+  ← UserService (relates_to)
+
+=== Related Documents (3) ===
+  - my-repo:src/auth.ts:0
+  - my-repo:src/auth.ts:1
+  - my-repo:docs/auth.md:0
+```
 
 ## Index Lifecycle
 

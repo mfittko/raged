@@ -1,19 +1,35 @@
 ---
 name: rag-stack
 description: >
-  Store and retrieve knowledge using rag-stack semantic search. Ingest any text
-  content — code, docs, articles, emails, transcripts, notes — and query it by
-  natural language. Use when the user needs grounded context from their knowledge base.
+  Store and retrieve knowledge using rag-stack semantic search with enrichment and knowledge graph.
+  Ingest any content — code, docs, PDFs, images, articles, emails, transcripts, notes — and query
+  by natural language. Supports async metadata extraction, entity/relationship tracking, and hybrid
+  vector+graph retrieval. Use when the user needs grounded context from their knowledge base.
+version: 1.0.0
+compatibility: Requires curl and a running rag-stack instance (Docker Compose or Kubernetes)
+metadata:
+  openclaw:
+    emoji: "magnifying_glass"
+    requires:
+      bins:
+        - curl
+        - jq
+      env:
+        - RAG_STACK_URL
+    primaryEnv: RAG_STACK_URL
+    config:
+      apiToken:
+        description: "Bearer token for rag-stack API authentication (optional if auth is disabled)"
+        secret: true
 ---
 
-# rag-stack — Semantic Knowledge Base
+# rag-stack — Semantic Knowledge Base with Enrichment & Graph
 
-Store any text content and retrieve it via natural-language queries.
+Store any content and retrieve it via natural-language queries, enriched with metadata extraction and knowledge graph relationships.
 
-rag-stack chunks text, embeds it with a local model (Ollama + nomic-embed-text),
-stores vectors in Qdrant, and serves similarity search over an HTTP API.
-Content types: source code, markdown docs, blog articles, email threads,
-YouTube transcripts, meeting notes, or any plain text.
+rag-stack chunks text, embeds it with a local model (Ollama + nomic-embed-text), stores vectors in Qdrant, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds a Neo4j knowledge graph for entity-aware retrieval.
+
+Content types: source code, markdown docs, blog articles, email threads, PDFs, images, YouTube transcripts, meeting notes, Slack exports, or any text.
 
 ## Environment
 
@@ -27,14 +43,21 @@ YouTube transcripts, meeting notes, or any plain text.
 Before running queries or indexing, verify rag-stack is reachable:
 
 ```bash
-curl -sf "${RAG_STACK_URL:-http://localhost:8080}/healthz" | jq .
+curl -sf "$RAG_STACK_URL/healthz" | jq .
 # Expected: {"ok":true}
+```
+
+Or use the bundled checker script:
+
+```bash
+node scripts/check-connection.mjs "$RAG_STACK_URL"
 ```
 
 If the health check fails, remind the user to start the stack:
 
 ```bash
-docker compose up -d   # from the rag-stack repo root
+docker compose up -d   # base stack (Qdrant, Ollama, API)
+docker compose --profile enrichment up -d   # full stack with Redis, Neo4j, worker
 ```
 
 ## Querying the Knowledge Base
@@ -130,6 +153,38 @@ Combine multiple filters (AND logic) by adding entries to the `must` array.
 | `topK` | number | `8` | Number of results to return |
 | `collection` | string | `docs` | Qdrant collection to search |
 | `filter` | object | _(none)_ | Qdrant filter with `must` array |
+| `graphExpand` | boolean | `false` | Enable graph-based entity expansion (requires Neo4j) |
+
+### Query with Graph Expansion
+
+When Neo4j is enabled, queries can expand results to include related entities from the knowledge graph:
+
+```bash
+curl -s -X POST "$RAG_STACK_URL/query" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RAG_STACK_TOKEN" \
+  -d '{
+    "query": "authentication flow",
+    "topK": 5,
+    "graphExpand": true
+  }' | jq .
+```
+
+Response includes both vector results and extracted/expanded entities:
+
+```json
+{
+  "ok": true,
+  "results": [ /* vector search results */ ],
+  "graph": {
+    "entities": [
+      { "name": "AuthService", "type": "class" },
+      { "name": "JWT", "type": "library" }
+    ],
+    "relationships": []
+  }
+}
+```
 
 ### Filter Keys
 
@@ -218,6 +273,31 @@ node dist/index.js index \
 | `--exclude` | string | _(none)_ | Skip files matching this prefix |
 | `--maxFiles` | number | `4000` | Max files to process |
 | `--maxBytes` | number | `500000` | Max file size in bytes |
+| `--enrich` | boolean | `true` | Enable async enrichment |
+| `--no-enrich` | flag | - | Disable async enrichment |
+| `--doc-type` | string | _(auto)_ | Override document type detection |
+
+### Via the CLI (arbitrary file ingestion)
+
+For ingesting PDFs, images, Slack exports, or other non-repo content:
+
+```bash
+# Ingest a single PDF
+node dist/index.js ingest \
+  --file path/to/document.pdf \
+  --api "$RAG_STACK_URL" \
+  --token "$RAG_STACK_TOKEN" \
+  --collection docs
+
+# Ingest all files in a directory
+node dist/index.js ingest \
+  --dir path/to/content/ \
+  --api "$RAG_STACK_URL" \
+  --token "$RAG_STACK_TOKEN" \
+  --collection docs
+```
+
+Supported file types: text, code, PDFs (extracted text), images (base64 + EXIF metadata), Slack JSON exports.
 
 ### Ingest Request Schema
 
@@ -229,6 +309,135 @@ node dist/index.js index \
 | `items[].text` | string | **yes** | Full text to chunk and embed |
 | `items[].source` | string | **yes** | Source URL or identifier |
 | `items[].metadata` | object | no | Arbitrary metadata stored with chunks |
+| `items[].docType` | string | no | Document type (`code`, `text`, `pdf`, `image`, `slack`) |
+| `items[].enrich` | boolean | no | Enable async enrichment (default: `true`) |
+
+## Enrichment
+
+When enrichment is enabled (Redis + Neo4j + worker running), rag-stack performs async metadata extraction:
+
+- **Tier-1** (sync): Heuristic/AST/EXIF extraction during ingest
+- **Tier-2** (async): spaCy NER, keyword extraction, language detection
+- **Tier-3** (async): LLM-based summaries and entity extraction
+
+### Check Enrichment Status
+
+```bash
+# Get status for a specific document
+curl -s "$RAG_STACK_URL/enrichment/status/my-repo:src/auth.ts?collection=docs" \
+  -H "Authorization: Bearer $RAG_STACK_TOKEN" | jq .
+```
+
+Response:
+```json
+{
+  "status": "enriched",
+  "chunks": { "total": 3, "enriched": 3, "pending": 0, "processing": 0, "failed": 0, "none": 0 },
+  "extractedAt": "2026-02-14T10:05:00Z",
+  "metadata": {
+    "tier2": { "entities": [...], "keywords": [...], "language": "en" },
+    "tier3": { "summary": "...", "entities": [...] }
+  }
+}
+```
+
+### Get Enrichment Stats
+
+```bash
+# System-wide enrichment statistics
+curl -s "$RAG_STACK_URL/enrichment/stats" \
+  -H "Authorization: Bearer $RAG_STACK_TOKEN" | jq .
+```
+
+Via CLI:
+```bash
+node dist/index.js enrich --show-failed \
+  --api "$RAG_STACK_URL" \
+  --token "$RAG_STACK_TOKEN"
+```
+
+### Trigger Enrichment
+
+```bash
+# Enqueue pending items for enrichment
+curl -s -X POST "$RAG_STACK_URL/enrichment/enqueue" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RAG_STACK_TOKEN" \
+  -d '{"collection": "docs", "force": false}' | jq .
+
+# Force re-enrichment of all items
+curl -s -X POST "$RAG_STACK_URL/enrichment/enqueue" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RAG_STACK_TOKEN" \
+  -d '{"collection": "docs", "force": true}' | jq .
+```
+
+Via CLI:
+```bash
+# Trigger enrichment for pending items
+node dist/index.js enrich \
+  --api "$RAG_STACK_URL" \
+  --token "$RAG_STACK_TOKEN"
+
+# Force re-enrichment
+node dist/index.js enrich --force \
+  --api "$RAG_STACK_URL" \
+  --token "$RAG_STACK_TOKEN"
+```
+
+## Knowledge Graph
+
+When Neo4j is enabled, rag-stack builds a knowledge graph of entities and relationships extracted from documents.
+
+### Query Entity
+
+```bash
+# Get entity details, connections, and related documents
+curl -s "$RAG_STACK_URL/graph/entity/AuthService" \
+  -H "Authorization: Bearer $RAG_STACK_TOKEN" | jq .
+```
+
+Response:
+```json
+{
+  "entity": {
+    "name": "AuthService",
+    "type": "class",
+    "description": "Handles user authentication"
+  },
+  "connections": [
+    { "entity": "JWT", "relationship": "uses", "direction": "outgoing" },
+    { "entity": "UserService", "relationship": "relates_to", "direction": "incoming" }
+  ],
+  "documents": [
+    { "id": "my-repo:src/auth.ts:0" },
+    { "id": "my-repo:src/auth.ts:1" }
+  ]
+}
+```
+
+Via CLI:
+```bash
+node dist/index.js graph --entity "AuthService" \
+  --api "$RAG_STACK_URL" \
+  --token "$RAG_STACK_TOKEN"
+```
+
+Output:
+```
+=== Entity: AuthService ===
+Type: class
+Description: Handles user authentication
+
+=== Connections (2) ===
+  → JWT (uses)
+  ← UserService (relates_to)
+
+=== Related Documents (3) ===
+  - my-repo:src/auth.ts:0
+  - my-repo:src/auth.ts:1
+  - my-repo:docs/auth.md:0
+```
 
 ## Error Handling
 
