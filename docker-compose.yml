@@ -9,6 +9,41 @@ services:
     ports: ["11434:11434"]
     volumes: ["ollama:/root/.ollama"]
 
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    volumes: ["redis_data:/data"]
+    command: redis-server --appendonly yes
+    profiles: ["enrichment", "full"]
+
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: "${NEO4J_AUTH:-}"
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes: ["neo4j_data:/data"]
+    profiles: ["enrichment", "full"]
+
+  enrichment-worker:
+    build: ./worker
+    environment:
+      REDIS_URL: "redis://redis:6379"
+      QDRANT_URL: "http://qdrant:6333"
+      NEO4J_URL: "bolt://neo4j:7687"
+      NEO4J_USER: "neo4j"
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
+      OLLAMA_URL: "http://ollama:11434"
+      EXTRACTOR_PROVIDER: "ollama"
+      EXTRACTOR_MODEL_FAST: "llama3"
+      EXTRACTOR_MODEL_CAPABLE: "llama3"
+      EXTRACTOR_MODEL_VISION: "llava"
+      WORKER_CONCURRENCY: "4"
+    depends_on: [redis, neo4j, qdrant, ollama]
+    profiles: ["enrichment", "full"]
+
   api:
     build:
       context: ./api
@@ -21,9 +56,12 @@ services:
       EMBED_MODEL: "nomic-embed-text"
       PORT: "8080"
       RAG_API_TOKEN: ""  # set to enable auth
+      ENRICHMENT_ENABLED: "false"
     ports: ["8080:8080"]
     depends_on: [qdrant, ollama]
 
 volumes:
   qdrant_storage:
   ollama:
+  redis_data:
+  neo4j_data:
