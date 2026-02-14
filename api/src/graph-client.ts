@@ -26,6 +26,22 @@ export function isGraphEnabled(): boolean {
   return Boolean(NEO4J_URL && NEO4J_USER && NEO4J_PASSWORD);
 }
 
+export async function ensureIndexes(): Promise<void> {
+  const d = getDriver();
+  if (!d) return;
+
+  const session = d.session();
+  try {
+    // Required index: Entity.name for all entity lookup queries (task #8)
+    // This supports: expandEntities, getEntity, getDocumentsByEntityMention
+    await session.run(
+      "CREATE INDEX entity_name IF NOT EXISTS FOR (e:Entity) ON (e.name)"
+    );
+  } finally {
+    await session.close();
+  }
+}
+
 export interface Entity {
   name: string;
   type: string;

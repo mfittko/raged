@@ -24,7 +24,25 @@ export async function ensureCollection(name = DEFAULT_COLLECTION) {
   const collections = await qdrant.getCollections();
   const exists = collections.collections?.some((c) => c.name === name);
   if (exists) return;
+  
   await qdrant.createCollection(name, { vectors: { size: VECTOR_SIZE, distance: DISTANCE } });
+  
+  // Create payload indexes for filterable fields to avoid full collection scans
+  // Required indexes per AGENTS.md performance requirements
+  const payloadIndexes = [
+    "enrichmentStatus", // used in enrichment queries
+    "repoId",          // used in CLI filtering
+    "path",            // used in CLI filtering  
+    "lang",            // used in CLI filtering
+    "baseId",          // used in getPointsByBaseId (see task #7)
+  ];
+  
+  for (const fieldName of payloadIndexes) {
+    await qdrant.createPayloadIndex(name, {
+      field_name: fieldName,
+      field_schema: "keyword",
+    });
+  }
 }
 
 export function collectionName(name?: string) {

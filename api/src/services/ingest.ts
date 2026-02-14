@@ -91,6 +91,7 @@ export async function ingest(
         text: allChunks[i],
         source: info.source,
         chunkIndex: info.chunkIndex,
+        baseId: info.baseId, // Store explicit baseId for indexed queries (task #7)
         docType: info.docType,
         ingestedAt: now,
         enrichmentStatus: shouldEnrich ? "pending" : "none",
