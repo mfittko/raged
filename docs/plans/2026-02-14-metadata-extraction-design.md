@@ -20,42 +20,24 @@ The current ingestion pipeline stores minimal metadata: `repoId`, `path`, `lang`
 
 ## Architecture
 
-```
-                         ┌──────────────┐
-                         │  CLI / Agent  │
-                         └──────┬───────┘
-                                │ POST /ingest
-                                ▼
-┌─────────────────────────────────────────────────────┐
-│                     RAG API                          │
-│  1. Detect document type (heuristic)                 │
-│  2. Extract tier-1 metadata (heuristic/parser)       │
-│  3. Chunk + embed + upsert to Qdrant                 │
-│  4. Enqueue enrichment task to Redis                 │
-└──────────┬──────────────┬───────────────┬───────────┘
-           │              │               │
-           ▼              ▼               ▼
-       ┌───────┐    ┌─────────┐    ┌───────────┐
-       │Qdrant │    │  Redis  │    │  Ollama   │
-       │       │    │ (queue) │    │(embeddings)│
-       └───────┘    └────┬────┘    └───────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────┐
-│               Enrichment Worker (Python)             │
-│  1. Dequeue task                                     │
-│  2. Read item from Qdrant                            │
-│  3. Run tier-2 extraction (NLP: entities, keywords)  │
-│  4. Run tier-3 extraction (LLM: summary, relations)  │
-│  5. Update Qdrant payload                            │
-│  6. Write entities + edges to Neo4j                  │
-└──────────┬──────────────┬───────────────────────────┘
-           │              │
-           ▼              ▼
-       ┌───────┐    ┌─────────┐
-       │Qdrant │    │  Neo4j  │
-       │(update)│   │ (graph) │
-       └───────┘    └─────────┘
+```mermaid
+graph TD
+  client[CLI / Agent]
+  api[RAG API]
+  qdrant[(Qdrant)]
+  redis[(Redis Queue)]
+  ollama[(Ollama Embeddings)]
+  worker[Enrichment Worker (Python)]
+  neo4j[(Neo4j Graph)]
+
+  client -->|POST /ingest| api
+  api -->|Chunk + upsert vectors| qdrant
+  api -->|Enqueue enrichment task| redis
+  api -->|Create embeddings| ollama
+  redis -->|BRPOP task| worker
+  worker -->|Read + update payload| qdrant
+  worker -->|Run tier-3 extraction| ollama
+  worker -->|Upsert entities + relationships| neo4j
 ```
 
 **New services**: Redis (task queue), Neo4j (graph DB), enrichment worker (Python).

@@ -1076,8 +1076,56 @@ const driver = NEO4J_URL && NEO4J_USER && NEO4J_PASSWORD
   ? neo4j.driver(NEO4J_URL, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD))
   : null;
 
-export async function expandEntities(entityNames: string[], depth = 2) { ... }
-export async function getEntity(name: string) { ... }
+export async function expandEntities(entityNames: string[], depth = 2) {
+  if (!driver || entityNames.length === 0) return [];
+  const session = driver.session();
+  try {
+    const result = await session.run(
+      `
+      MATCH (e:Entity)
+      WHERE e.name IN $entityNames
+      MATCH path = (e)-[:RELATES_TO*1..$depth]-(neighbor:Entity)
+      RETURN DISTINCT neighbor.name AS name, neighbor.type AS type
+      LIMIT 200
+      `,
+      { entityNames, depth }
+    );
+    return result.records.map((record) => ({
+      name: record.get("name"),
+      type: record.get("type"),
+    }));
+  } finally {
+    await session.close();
+  }
+}
+
+export async function getEntity(name: string) {
+  if (!driver) return null;
+  const session = driver.session();
+  try {
+    const result = await session.run(
+      `
+      MATCH (e:Entity {name: $name})
+      OPTIONAL MATCH (e)-[r:RELATES_TO]-(neighbor:Entity)
+      RETURN e, collect(DISTINCT {
+        entity: neighbor.name,
+        relationship: r.type,
+        direction: CASE WHEN startNode(r) = e THEN "outgoing" ELSE "incoming" END
+      }) AS connections
+      LIMIT 1
+      `,
+      { name }
+    );
+    if (result.records.length === 0) return null;
+    const record = result.records[0];
+    return {
+      entity: record.get("e").properties,
+      connections: record.get("connections"),
+    };
+  } finally {
+    await session.close();
+  }
+}
 ```
 
 Install: `cd api && npm install neo4j-driver`
