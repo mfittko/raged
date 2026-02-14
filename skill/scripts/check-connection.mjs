@@ -7,6 +7,9 @@
  */
 
 export async function checkConnection(url, fetchFn = fetch) {
+  if (!url || typeof url !== "string") {
+    return { ok: false, url: String(url), error: "No URL provided" };
+  }
   const baseUrl = url.replace(/\/+$/, "");
   try {
     const res = await fetchFn(`${baseUrl}/healthz`);
