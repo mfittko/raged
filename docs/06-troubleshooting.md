@@ -101,6 +101,17 @@ docker compose restart api
 - Run Ollama with GPU acceleration (mount GPU in Docker Compose)
 - Increase batch size in future versions
 
+## Docker CI Builds Not Getting Faster
+
+**Cause:** Docker layer cache in GitHub Actions is empty on the first run for a branch/scope.
+
+**Fix:**
+1. Let one successful CI run complete to warm the Buildx GHA cache
+2. Re-run CI (or push a small change) and compare Docker step timings
+3. If cache misses persist, check that Docker build jobs still set both `cache-from` and `cache-to` in `.github/workflows/ci.yaml`
+
+Expected behavior: first run is slower, subsequent runs reuse layers and are faster when Dockerfile inputs are unchanged.
+
 ## Enrichment Not Processing
 
 **Cause:** Worker not running, Redis not connected, or tasks stuck.

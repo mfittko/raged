@@ -77,6 +77,46 @@ Keep the first line under 72 characters. Add a body for complex changes.
 4. Write a clear description: what changed and why
 5. Link related issues if applicable
 
+## CI Pipeline Layout
+
+The CI workflow is in `.github/workflows/ci.yaml`.
+
+- Node quality jobs use matrices for `api` and `cli` (`build`, `lint`)
+- Worker quality jobs use the `worker-ci` matrix (`test`, `lint`)
+- Docker builds are split by concern:
+    - `docker-build-node` builds API and indexer images via matrix
+    - `docker-build-worker` builds the worker image separately
+
+This structure keeps jobs focused and reduces duplication.
+
+## Worker Dependency Files
+
+Worker dependencies are split by purpose:
+
+- `worker/requirements.txt` → runtime dependencies
+- `worker/requirements-test.txt` → test dependencies (extends runtime)
+- `worker/requirements-lint.txt` → lint-only dependencies
+
+Pinned lock files are committed and used in CI and Docker builds:
+
+- `worker/requirements.lock`
+- `worker/requirements-test.lock`
+- `worker/requirements-lint.lock`
+
+## Refreshing Worker Lock Files
+
+When changing worker dependency inputs, regenerate lock files in `worker/`:
+
+```bash
+cd worker
+python3 -m pip install pip-tools
+python3 -m piptools compile requirements.txt -o requirements.lock
+python3 -m piptools compile requirements-test.txt -o requirements-test.lock
+python3 -m piptools compile requirements-lint.txt -o requirements-lint.lock
+```
+
+Commit both the changed input file(s) and generated lock file(s) in the same PR.
+
 ## Project Structure
 
 ```

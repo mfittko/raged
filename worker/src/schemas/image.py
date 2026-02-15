@@ -1,10 +1,12 @@
 """Image metadata extraction schema."""
+
 from pydantic import BaseModel
 from typing import List
 
 
 class ImageMetadata(BaseModel):
     """Metadata extracted from images."""
+
     description: str
     detected_objects: List[str] = []
     ocr_text: str = ""

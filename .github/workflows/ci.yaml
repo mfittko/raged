@@ -28,6 +28,8 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: Security audit
+        run: npm audit --audit-level=high
 
   test:
     runs-on: ubuntu-latest
@@ -47,7 +49,7 @@ jobs:
       - name: Install
         run: npm ci
       - name: Run tests
-        run: npm test
+        run: npm test -- --coverage
 
   lint:
     runs-on: ubuntu-latest
@@ -71,27 +73,85 @@ jobs:
         run: npm ci
       - name: Type check
         run: npx tsc --noEmit
+      - name: Security audit
+        run: npm audit --audit-level=high
 
-  docker-build:
+  worker-ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - task: test
+            cache_dependency_path: |
+              worker/requirements.lock
+              worker/requirements-test.lock
+            install_command: pip install -r requirements-test.lock
+            run_command: pytest
+          - task: lint
+            cache_dependency_path: worker/requirements-lint.lock
+            install_command: pip install -r requirements-lint.lock
+            run_command: |
+              ruff check .
+              ruff format --check .
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: ${{ matrix.cache_dependency_path }}
+      - name: Install dependencies
+        run: ${{ matrix.install_command }}
+      - name: Run ${{ matrix.task }}
+        run: ${{ matrix.run_command }}
+
+  docker-build-node:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     needs: [build, test, lint]
+    strategy:
+      matrix:
+        include:
+          - component: api
+            context: ./api
+            tag: rag-api:ci
+          - component: indexer
+            context: ./cli
+            tag: rag-index:ci
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Build API image (no push)
+      - name: Build ${{ matrix.component }} image (no push)
         uses: docker/build-push-action@v6
         with:
-          context: ./api
+          context: ${{ matrix.context }}
           push: false
-          tags: rag-api:ci
-      - name: Build Indexer image (no push)
+          tags: ${{ matrix.tag }}
+          cache-from: type=gha,scope=docker-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.component }}
+
+  docker-build-worker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: [build, test, lint, worker-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build Worker image (no push)
         uses: docker/build-push-action@v6
         with:
-          context: ./cli
+          context: ./worker
           push: false
-          tags: rag-index:ci
+          tags: rag-worker:ci
+          cache-from: type=gha,scope=docker-worker
+          cache-to: type=gha,mode=max,scope=docker-worker
 
   helm-lint:
     runs-on: ubuntu-latest

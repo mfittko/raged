@@ -1,6 +1,12 @@
 """Tests for tier-2 NLP extraction."""
+
 import pytest
-from src.tier2 import extract_entities, extract_keywords, detect_language, process_text_nlp
+from src.tier2 import (
+    extract_entities,
+    extract_keywords,
+    detect_language,
+    process_text_nlp,
+)
 
 
 # Helper to check if spaCy model is available
@@ -8,6 +14,7 @@ def _spacy_model_available():
     """Check if spaCy model is installed."""
     try:
         import spacy
+
         spacy.load("en_core_web_sm")
         return True
     except (OSError, ImportError):
@@ -15,8 +22,7 @@ def _spacy_model_available():
 
 
 requires_spacy_model = pytest.mark.skipif(
-    not _spacy_model_available(),
-    reason="spaCy model en_core_web_sm not installed"
+    not _spacy_model_available(), reason="spaCy model en_core_web_sm not installed"
 )
 
 
@@ -25,11 +31,11 @@ def test_extract_entities():
     """Test entity extraction from text."""
     text = "Apple Inc. was founded by Steve Jobs in Cupertino, California on April 1, 1976."
     entities = extract_entities(text)
-    
+
     # Should find entities for organization, person, location, date
     assert len(entities) > 0
     assert any(e["label"] in ["ORG", "PERSON", "GPE", "DATE"] for e in entities)
-    
+
     # Check we got Apple and Steve Jobs
     entity_texts = [e["text"] for e in entities]
     assert any("Apple" in text for text in entity_texts)
@@ -52,11 +58,11 @@ def test_extract_keywords():
     machine learning that uses neural networks with multiple layers.
     """
     keywords = extract_keywords(text, top_n=5)
-    
+
     # Should return some keywords
     assert len(keywords) > 0
     assert len(keywords) <= 5
-    
+
     # Keywords should be strings
     assert all(isinstance(k, str) for k in keywords)
 
@@ -107,18 +113,18 @@ def test_process_text_nlp():
     """Test single-pass NLP processing for entities and keywords."""
     text = "Apple Inc. was founded by Steve Jobs in California. The company revolutionized personal computing."
     result = process_text_nlp(text)
-    
+
     # Verify structure
     assert "entities" in result
     assert "keywords" in result
     assert isinstance(result["entities"], list)
     assert isinstance(result["keywords"], list)
-    
+
     # Verify entities were extracted
     assert len(result["entities"]) > 0
     entity_texts = [e["text"] for e in result["entities"]]
     assert any("Apple" in text for text in entity_texts)
-    
+
     # Verify keywords were extracted
     assert len(result["keywords"]) > 0
 
