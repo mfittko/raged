@@ -1027,7 +1027,7 @@ describe("ingest integration tests", () => {
           {
             url: "https://unreachable.example.com/",
             status: null,
-            reason: "network_error: connection refused",
+            reason: "fetch_failed",
           },
         ],
       });
@@ -1048,7 +1048,7 @@ describe("ingest integration tests", () => {
       expect(body.upserted).toBe(0);
       expect(body.errors).toHaveLength(1);
       expect(body.errors[0].status).toBe(null);
-      expect(body.errors[0].reason).toContain("network_error");
+      expect(body.errors[0].reason).toBe("fetch_failed");
 
       await app.close();
     });
