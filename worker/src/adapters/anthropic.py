@@ -2,9 +2,9 @@
 
 import json
 import logging
-from typing import Dict
+
 from src.adapters.base import ExtractorAdapter, ImageDescription
-from src.config import ANTHROPIC_API_KEY, EXTRACTOR_MODEL_FAST, EXTRACTOR_MODEL_CAPABLE
+from src.config import ANTHROPIC_API_KEY, EXTRACTOR_MODEL_CAPABLE, EXTRACTOR_MODEL_FAST
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,8 @@ class AnthropicAdapter(ExtractorAdapter):
         self.max_tokens = 4096
 
     async def extract_metadata(
-        self, text: str, doc_type: str, schema: Dict, prompt_template: str = ""
-    ) -> Dict:
+        self, text: str, doc_type: str, schema: dict, prompt_template: str = ""
+    ) -> dict:
         """Extract type-specific metadata using Claude."""
         # Use custom prompt template if provided, otherwise use generic prompt
         if prompt_template:
@@ -33,18 +33,18 @@ class AnthropicAdapter(ExtractorAdapter):
                 "{schema}", json.dumps(schema, indent=2)
             )
         else:
-            prompt = f"""Analyze this {doc_type} document and extract metadata according to the provided schema.
-
-Text:
-{text[:8000]}
-
-Extract the metadata and provide it as structured JSON."""
+            prompt = (
+                f"Analyze this {doc_type} document and extract metadata "
+                f"according to the provided schema.\n\n"
+                f"Text:\n{text[:8000]}\n\n"
+                f"Extract the metadata and provide it as structured JSON."
+            )
 
         return await self._extract_with_tools(
             prompt, schema, "metadata_extraction", self.fast_model
         )
 
-    async def extract_entities(self, text: str) -> Dict:
+    async def extract_entities(self, text: str) -> dict:
         """Extract entities and relationships using Claude."""
         prompt = f"""Extract entities and relationships from this text.
 
@@ -100,9 +100,7 @@ Extract all entities and relationships you can identify."""
             prompt, schema, "entity_extraction", self.capable_model
         )
 
-    async def describe_image(
-        self, image_base64: str, context: str = ""
-    ) -> ImageDescription:
+    async def describe_image(self, image_base64: str, context: str = "") -> ImageDescription:
         """Describe an image using Claude's vision capabilities."""
         prompt = f"""Describe this image in detail. Provide:
 - description: A detailed description of the image
@@ -143,9 +141,7 @@ Extract all entities and relationships you can identify."""
 
         except Exception as e:
             logger.error(f"Error in image description: {e}")
-            return ImageDescription(
-                description="", detected_objects=[], ocr_text="", image_type=""
-            )
+            return ImageDescription(description="", detected_objects=[], ocr_text="", image_type="")
 
     async def is_available(self) -> bool:
         """Check if Anthropic API is available."""
@@ -162,8 +158,8 @@ Extract all entities and relationships you can identify."""
             return False
 
     async def _extract_with_tools(
-        self, prompt: str, schema: Dict, tool_name: str, model: str
-    ) -> Dict:
+        self, prompt: str, schema: dict, tool_name: str, model: str
+    ) -> dict:
         """Extract structured data using Claude's tool use."""
         try:
             message = await self.client.messages.create(
@@ -192,7 +188,7 @@ Extract all entities and relationships you can identify."""
             logger.error(f"Error in structured extraction: {e}")
             return self._empty_response_for_schema(schema)
 
-    def _parse_image_description(self, text: str) -> Dict:
+    def _parse_image_description(self, text: str) -> dict:
         """Parse image description from Claude's response text."""
         # Try to find JSON in the response
         try:
@@ -230,7 +226,7 @@ Extract all entities and relationships you can identify."""
 
         return result
 
-    def _empty_response_for_schema(self, schema: Dict) -> Dict:
+    def _empty_response_for_schema(self, schema: dict) -> dict:
         """Generate an empty response matching the schema structure."""
         result = {}
         if "properties" in schema:

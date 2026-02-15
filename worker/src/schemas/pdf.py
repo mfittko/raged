@@ -1,7 +1,6 @@
 """PDF document metadata extraction schema."""
 
 from pydantic import BaseModel
-from typing import List
 
 
 class Section(BaseModel):
@@ -15,8 +14,8 @@ class PDFMetadata(BaseModel):
     """Metadata extracted from PDF documents."""
 
     summary: str
-    key_entities: List[str] = []
-    sections: List[Section] = []
+    key_entities: list[str] = []
+    sections: list[Section] = []
 
 
 # Prompt template for PDF metadata extraction

@@ -1,7 +1,7 @@
 """Base adapter interface for LLM extraction."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, List
+
 from pydantic import BaseModel, Field
 
 
@@ -9,7 +9,7 @@ class ImageDescription(BaseModel):
     """Result of image description extraction."""
 
     description: str
-    detected_objects: List[str] = Field(default_factory=list)
+    detected_objects: list[str] = Field(default_factory=list)
     ocr_text: str = ""
     image_type: str = ""  # photo, diagram, screenshot, chart
 
@@ -19,8 +19,8 @@ class ExtractorAdapter(ABC):
 
     @abstractmethod
     async def extract_metadata(
-        self, text: str, doc_type: str, schema: Dict, prompt_template: str = ""
-    ) -> Dict:
+        self, text: str, doc_type: str, schema: dict, prompt_template: str = ""
+    ) -> dict:
         """Extract type-specific metadata using the fast model.
 
         Args:
@@ -35,7 +35,7 @@ class ExtractorAdapter(ABC):
         pass
 
     @abstractmethod
-    async def extract_entities(self, text: str) -> Dict:
+    async def extract_entities(self, text: str) -> dict:
         """Extract entities and relationships using the capable model.
 
         Args:
@@ -47,9 +47,7 @@ class ExtractorAdapter(ABC):
         pass
 
     @abstractmethod
-    async def describe_image(
-        self, image_base64: str, context: str = ""
-    ) -> ImageDescription:
+    async def describe_image(self, image_base64: str, context: str = "") -> ImageDescription:
         """Describe an image using the vision model.
 
         Args:

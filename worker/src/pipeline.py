@@ -2,13 +2,14 @@
 
 import asyncio
 import logging
-from typing import Dict
+
 from qdrant_client import QdrantClient
-from src.config import QDRANT_URL
-from src.tier2 import process_text_nlp, detect_language
-from src.adapters import get_adapter
-from src.schemas import get_schema_for_doctype
+
 from src import graph
+from src.adapters import get_adapter
+from src.config import QDRANT_URL
+from src.schemas import get_schema_for_doctype
+from src.tier2 import detect_language, process_text_nlp
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ qdrant = QdrantClient(url=QDRANT_URL)
 adapter = get_adapter()
 
 
-async def process_task(task: Dict) -> None:
+async def process_task(task: dict) -> None:
     """Process a single enrichment task through the full pipeline.
 
     Args:
@@ -46,9 +47,7 @@ async def process_task(task: Dict) -> None:
 
         # Tier 3: LLM extraction (document-level - only on last chunk)
         if chunk_index == total_chunks - 1:
-            await run_document_level_extraction(
-                base_id, collection, doc_type, total_chunks, source
-            )
+            await run_document_level_extraction(base_id, collection, doc_type, total_chunks, source)
 
         # Mark chunk as enriched
         await update_enrichment_status(qdrant_id, collection, "enriched")
@@ -61,7 +60,7 @@ async def process_task(task: Dict) -> None:
         raise
 
 
-async def run_tier2_extraction(text: str) -> Dict:
+async def run_tier2_extraction(text: str) -> dict:
     """Run tier-2 NLP extraction on text.
 
     Args:
@@ -146,9 +145,7 @@ async def run_document_level_extraction(
         update_tasks = []
         for i in range(total_chunks):
             chunk_id = f"{base_id}:{i}"
-            update_tasks.append(
-                update_payload(chunk_id, collection, {"tier3": tier3_meta})
-            )
+            update_tasks.append(update_payload(chunk_id, collection, {"tier3": tier3_meta}))
 
         # Use return_exceptions to handle partial failures gracefully
         update_results = await asyncio.gather(*update_tasks, return_exceptions=True)
@@ -160,16 +157,12 @@ async def run_document_level_extraction(
                 )
 
         # Write to Neo4j
-        await write_to_neo4j(
-            base_id, doc_type, source, collection, tier3_meta, entity_result
-        )
+        await write_to_neo4j(base_id, doc_type, source, collection, tier3_meta, entity_result)
 
         logger.info(f"Completed document-level extraction for {base_id}")
 
     except Exception as e:
-        logger.error(
-            f"Document-level extraction failed for {base_id}: {e}", exc_info=True
-        )
+        logger.error(f"Document-level extraction failed for {base_id}: {e}", exc_info=True)
         raise
 
 
@@ -178,8 +171,8 @@ async def write_to_neo4j(
     doc_type: str,
     source: str,
     collection: str,
-    tier3_meta: Dict,
-    entity_result: Dict,
+    tier3_meta: dict,
+    entity_result: dict,
 ) -> None:
     """Write document, entities, and relationships to Neo4j.
 
@@ -216,13 +209,9 @@ async def write_to_neo4j(
             rel_desc = rel.get("description", "")
 
             if source_entity and target_entity:
-                await graph.add_relationship(
-                    source_entity, target_entity, rel_type, rel_desc
-                )
+                await graph.add_relationship(source_entity, target_entity, rel_type, rel_desc)
 
-        logger.info(
-            f"Wrote to Neo4j: {len(entities)} entities, {len(relationships)} relationships"
-        )
+        logger.info(f"Wrote to Neo4j: {len(entities)} entities, {len(relationships)} relationships")
 
     except Exception as e:
         logger.warning(f"Failed to write to Neo4j for {base_id}: {e}")
@@ -245,9 +234,7 @@ async def aggregate_chunks(base_id: str, collection: str, total_chunks: int) -> 
 
     try:
         # Run synchronous Qdrant call in thread pool to avoid blocking event loop
-        points = await asyncio.to_thread(
-            qdrant.retrieve, collection_name=collection, ids=chunk_ids
-        )
+        points = await asyncio.to_thread(qdrant.retrieve, collection_name=collection, ids=chunk_ids)
     except Exception as e:
         logger.warning(f"Failed to retrieve chunks for {base_id}: {e}")
         return ""
@@ -292,7 +279,7 @@ async def update_enrichment_status(point_id: str, collection: str, status: str) 
         logger.error(f"Failed to update enrichment status for {point_id}: {e}")
 
 
-async def update_payload(point_id: str, collection: str, payload: Dict) -> None:
+async def update_payload(point_id: str, collection: str, payload: dict) -> None:
     """Update the payload of a point in Qdrant.
 
     Args:

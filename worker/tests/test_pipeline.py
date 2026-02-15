@@ -1,16 +1,17 @@
 """Tests for the enrichment pipeline."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from src.pipeline import (
-    process_task,
-    run_tier2_extraction,
-    run_document_level_extraction,
     aggregate_chunks,
+    process_task,
+    run_document_level_extraction,
+    run_tier2_extraction,
     update_enrichment_status,
     update_payload,
 )
-
 
 # Check if spaCy model is available
 try:
@@ -40,9 +41,7 @@ def mock_task():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not SPACY_AVAILABLE, reason="spaCy model en_core_web_sm not installed"
-)
+@pytest.mark.skipif(not SPACY_AVAILABLE, reason="spaCy model en_core_web_sm not installed")
 async def test_run_tier2_extraction():
     """Test tier-2 extraction."""
     text = "Apple Inc. was founded by Steve Jobs in Cupertino."
@@ -111,15 +110,12 @@ async def test_process_task_multi_chunk(mock_task):
     ):
         # Mock Qdrant retrieve for aggregation - return all 3 chunks
         mock_points = [
-            MagicMock(id=f"test-id:{i}", payload={"text": f"chunk {i}"})
-            for i in range(3)
+            MagicMock(id=f"test-id:{i}", payload={"text": f"chunk {i}"}) for i in range(3)
         ]
         mock_qdrant.retrieve.return_value = mock_points
 
         # Mock adapter responses
-        mock_adapter.extract_metadata = AsyncMock(
-            return_value={"summary": "Test function"}
-        )
+        mock_adapter.extract_metadata = AsyncMock(return_value={"summary": "Test function"})
         mock_adapter.extract_entities = AsyncMock(
             return_value={"entities": [], "relationships": []}
         )
@@ -185,10 +181,10 @@ async def test_process_task_handles_error(mock_task):
         patch("src.pipeline.adapter") as mock_adapter,
     ):
         # Make adapter raise an error
-        mock_adapter.extract_metadata = AsyncMock(side_effect=Exception("Test error"))
+        mock_adapter.extract_metadata = AsyncMock(side_effect=RuntimeError("Test error"))
 
         # Should raise the exception
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             await process_task(mock_task)
 
         # Verify status was set to failed
@@ -219,9 +215,7 @@ async def test_run_document_level_extraction():
         mock_adapter.extract_metadata = AsyncMock(return_value={"summary": "Test"})
         mock_adapter.extract_entities = AsyncMock(
             return_value={
-                "entities": [
-                    {"name": "TestEntity", "type": "class", "description": "Test"}
-                ],
+                "entities": [{"name": "TestEntity", "type": "class", "description": "Test"}],
                 "relationships": [],
             }
         )

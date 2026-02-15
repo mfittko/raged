@@ -1,16 +1,17 @@
 """Tests for extraction schemas."""
 
 import json
+
 from src.schemas import get_schema_for_doctype
-from src.schemas.code import CodeMetadata
-from src.schemas.slack import SlackMetadata
-from src.schemas.email import EmailMetadata
-from src.schemas.meeting import MeetingMetadata
-from src.schemas.image import ImageMetadata
-from src.schemas.pdf import PDFMetadata
 from src.schemas.article import ArticleMetadata
-from src.schemas.text import TextMetadata
+from src.schemas.code import CodeMetadata
+from src.schemas.email import EmailMetadata
 from src.schemas.entities import EntityExtractionResult
+from src.schemas.image import ImageMetadata
+from src.schemas.meeting import MeetingMetadata
+from src.schemas.pdf import PDFMetadata
+from src.schemas.slack import SlackMetadata
+from src.schemas.text import TextMetadata
 
 
 def test_code_schema():

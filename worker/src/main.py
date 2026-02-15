@@ -2,19 +2,19 @@ import asyncio
 import json
 import logging
 import time
+
 import redis.asyncio as aioredis
+
 from src.config import (
-    REDIS_URL,
-    QUEUE_NAME,
     DEAD_LETTER_QUEUE,
-    WORKER_CONCURRENCY,
     MAX_RETRIES,
+    QUEUE_NAME,
+    REDIS_URL,
+    WORKER_CONCURRENCY,
 )
 from src.pipeline import process_task
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -75,9 +75,7 @@ async def process_task_with_retry(redis_client: aioredis.Redis, task: dict) -> N
         else:
             # Move to dead-letter queue
             await redis_client.lpush(DEAD_LETTER_QUEUE, json.dumps(task))
-            logger.error(
-                f"Task {task_id} moved to dead-letter queue after {MAX_RETRIES} attempts"
-            )
+            logger.error(f"Task {task_id} moved to dead-letter queue after {MAX_RETRIES} attempts")
 
 
 async def worker_task(redis_client: aioredis.Redis) -> None:
@@ -111,10 +109,7 @@ async def worker_loop() -> None:
 
     # Create fixed number of worker tasks for concurrency control
     # Each worker processes one task at a time from the queue
-    workers = [
-        asyncio.create_task(worker_task(redis_client))
-        for _ in range(WORKER_CONCURRENCY)
-    ]
+    workers = [asyncio.create_task(worker_task(redis_client)) for _ in range(WORKER_CONCURRENCY)]
 
     try:
         # Wait for all workers (they run forever)

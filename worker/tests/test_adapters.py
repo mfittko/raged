@@ -1,10 +1,12 @@
 """Tests for LLM adapters."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from src.adapters import get_adapter
 from src.adapters.base import ImageDescription
 from src.adapters.ollama import OllamaAdapter
-from src.adapters import get_adapter
 
 
 @pytest.mark.asyncio
@@ -50,7 +52,10 @@ async def test_ollama_adapter_extract_entities():
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "response": '{"entities": [{"name": "TestClass", "type": "class", "description": "A test class"}], "relationships": []}'
+            "response": (
+                '{"entities": [{"name": "TestClass", "type": "class", '
+                '"description": "A test class"}], "relationships": []}'
+            )
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -113,7 +118,10 @@ async def test_ollama_adapter_describe_image():
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "response": '{"description": "A test image", "detected_objects": ["object1"], "ocr_text": "", "image_type": "photo"}'
+            "response": (
+                '{"description": "A test image", '
+                '"detected_objects": ["object1"], "ocr_text": "", "image_type": "photo"}'
+            )
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -195,9 +203,7 @@ async def test_ollama_adapter_with_custom_prompt():
         }
 
         custom_prompt = "Analyze this article and extract: {fields}"
-        result = await adapter.extract_metadata(
-            "article text", "article", schema, custom_prompt
-        )
+        result = await adapter.extract_metadata("article text", "article", schema, custom_prompt)
 
         # Verify the custom prompt was used (check the mock was called)
         assert mock_client.post.called

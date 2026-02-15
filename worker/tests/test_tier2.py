@@ -1,10 +1,11 @@
 """Tests for tier-2 NLP extraction."""
 
 import pytest
+
 from src.tier2 import (
+    detect_language,
     extract_entities,
     extract_keywords,
-    detect_language,
     process_text_nlp,
 )
 
@@ -111,7 +112,10 @@ def test_detect_language_short():
 @requires_spacy_model
 def test_process_text_nlp():
     """Test single-pass NLP processing for entities and keywords."""
-    text = "Apple Inc. was founded by Steve Jobs in California. The company revolutionized personal computing."
+    text = (
+        "Apple Inc. was founded by Steve Jobs in California. "
+        "The company revolutionized personal computing."
+    )
     result = process_text_nlp(text)
 
     # Verify structure

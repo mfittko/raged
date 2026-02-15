@@ -1,14 +1,13 @@
 """Generic text document metadata extraction schema."""
 
 from pydantic import BaseModel
-from typing import List
 
 
 class TextMetadata(BaseModel):
     """Metadata extracted from generic text documents."""
 
     summary: str
-    key_entities: List[str] = []
+    key_entities: list[str] = []
 
 
 # Prompt template for text metadata extraction

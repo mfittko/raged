@@ -2,14 +2,15 @@
 
 import json
 import logging
-from typing import Dict
+
 import httpx
+
 from src.adapters.base import ExtractorAdapter, ImageDescription
 from src.config import (
-    OLLAMA_URL,
-    EXTRACTOR_MODEL_FAST,
     EXTRACTOR_MODEL_CAPABLE,
+    EXTRACTOR_MODEL_FAST,
     EXTRACTOR_MODEL_VISION,
+    OLLAMA_URL,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,8 +27,8 @@ class OllamaAdapter(ExtractorAdapter):
         self.timeout = 60.0
 
     async def extract_metadata(
-        self, text: str, doc_type: str, schema: Dict, prompt_template: str = ""
-    ) -> Dict:
+        self, text: str, doc_type: str, schema: dict, prompt_template: str = ""
+    ) -> dict:
         """Extract type-specific metadata using Ollama."""
         # Use custom prompt template if provided, otherwise use generic prompt
         if prompt_template:
@@ -35,20 +36,19 @@ class OllamaAdapter(ExtractorAdapter):
                 "{schema}", json.dumps(schema, indent=2)
             )
         else:
-            # Truncate to 8000 chars to match other adapters (Ollama typically has larger context)
-            prompt = f"""Analyze this {doc_type} document and extract metadata according to the schema.
-
-Text:
-{text[:8000]}
-
-Schema:
-{json.dumps(schema, indent=2)}
-
-Respond with valid JSON matching the schema. Do not include any explanation, just the JSON."""
+            # Truncate to 8000 chars (Ollama typically has larger context)
+            prompt = (
+                f"Analyze this {doc_type} document and extract metadata "
+                f"according to the schema.\n\n"
+                f"Text:\n{text[:8000]}\n\n"
+                f"Schema:\n{json.dumps(schema, indent=2)}\n\n"
+                f"Respond with valid JSON matching the schema. "
+                f"Do not include any explanation, just the JSON."
+            )
 
         return await self._generate_structured(prompt, schema, self.fast_model)
 
-    async def extract_entities(self, text: str) -> Dict:
+    async def extract_entities(self, text: str) -> dict:
         """Extract entities and relationships using Ollama."""
         # Truncate to 8000 chars to match other adapters
         prompt = f"""Extract entities and relationships from this text.
@@ -110,9 +110,7 @@ Respond with valid JSON in this format:
 
         return await self._generate_structured(prompt, schema, self.capable_model)
 
-    async def describe_image(
-        self, image_base64: str, context: str = ""
-    ) -> ImageDescription:
+    async def describe_image(self, image_base64: str, context: str = "") -> ImageDescription:
         """Describe an image using Ollama's vision model."""
         prompt = f"""Describe this image in detail. Provide:
 - description: A detailed description of the image
@@ -155,8 +153,8 @@ Respond with valid JSON in this format:
             return False
 
     async def _generate_structured(
-        self, prompt: str, schema: Dict, model: str, max_retries: int = 3
-    ) -> Dict:
+        self, prompt: str, schema: dict, model: str, max_retries: int = 3
+    ) -> dict:
         """Generate structured output from Ollama with retry logic."""
         for attempt in range(max_retries):
             try:
@@ -187,17 +185,13 @@ Respond with valid JSON in this format:
                     # Last attempt - return empty structure
                     return self._empty_response_for_schema(schema)
             except Exception as e:
-                logger.error(
-                    f"Error generating structured output on attempt {attempt + 1}: {e}"
-                )
+                logger.error(f"Error generating structured output on attempt {attempt + 1}: {e}")
                 if attempt == max_retries - 1:
                     return self._empty_response_for_schema(schema)
 
         return self._empty_response_for_schema(schema)
 
-    async def _generate_vision(
-        self, prompt: str, image_base64: str, schema: Dict
-    ) -> Dict:
+    async def _generate_vision(self, prompt: str, image_base64: str, schema: dict) -> dict:
         """Generate vision output from Ollama."""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -226,7 +220,7 @@ Respond with valid JSON in this format:
 
         return self._empty_response_for_schema(schema)
 
-    def _empty_response_for_schema(self, schema: Dict) -> Dict:
+    def _empty_response_for_schema(self, schema: dict) -> dict:
         """Generate an empty response matching the schema structure."""
         result = {}
         if "properties" in schema:

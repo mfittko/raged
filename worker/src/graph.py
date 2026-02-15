@@ -1,14 +1,15 @@
 """Neo4j graph client for entity and relationship storage."""
 
 import logging
-from typing import Dict, List, Optional
-from neo4j import AsyncGraphDatabase, AsyncDriver
-from src.config import NEO4J_URL, NEO4J_USER, NEO4J_PASSWORD
+
+from neo4j import AsyncDriver, AsyncGraphDatabase
+
+from src.config import NEO4J_PASSWORD, NEO4J_URL, NEO4J_USER
 
 logger = logging.getLogger(__name__)
 
 # Global driver instance
-_driver: Optional[AsyncDriver] = None
+_driver: AsyncDriver | None = None
 
 
 def get_driver() -> AsyncDriver:
@@ -116,9 +117,7 @@ async def add_mention(doc_id: str, entity_name: str) -> None:
         )
 
 
-async def add_relationship(
-    source: str, target: str, rel_type: str, description: str = ""
-) -> None:
+async def add_relationship(source: str, target: str, rel_type: str, description: str = "") -> None:
     """Create a RELATES_TO relationship between two entities.
 
     Args:
@@ -143,7 +142,7 @@ async def add_relationship(
         )
 
 
-async def get_entity_neighborhood(name: str, depth: int = 2) -> Dict:
+async def get_entity_neighborhood(name: str, depth: int = 2) -> dict:
     """Get an entity and its neighborhood within specified depth.
 
     Args:
@@ -202,7 +201,7 @@ async def get_entity_neighborhood(name: str, depth: int = 2) -> Dict:
         }
 
 
-async def get_entity(name: str) -> Optional[Dict]:
+async def get_entity(name: str) -> dict | None:
     """Get a single entity by name.
 
     Args:
@@ -231,14 +230,12 @@ async def get_entity(name: str) -> Optional[Dict]:
             "type": entity.get("type"),
             "description": entity.get("description"),
             "mentionCount": entity.get("mentionCount", 0),
-            "firstSeen": str(entity.get("firstSeen"))
-            if entity.get("firstSeen")
-            else None,
+            "firstSeen": str(entity.get("firstSeen")) if entity.get("firstSeen") else None,
             "lastSeen": str(entity.get("lastSeen")) if entity.get("lastSeen") else None,
         }
 
 
-async def search_entities(query: str, limit: int = 10) -> List[Dict]:
+async def search_entities(query: str, limit: int = 10) -> list[dict]:
     """Search for entities by name (case-insensitive partial match).
 
     Args:

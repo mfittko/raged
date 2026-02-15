@@ -2,9 +2,9 @@
 
 import json
 import logging
-from typing import Dict
+
 from src.adapters.base import ExtractorAdapter, ImageDescription
-from src.config import OPENAI_API_KEY, EXTRACTOR_MODEL_FAST, EXTRACTOR_MODEL_CAPABLE
+from src.config import EXTRACTOR_MODEL_CAPABLE, EXTRACTOR_MODEL_FAST, OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,8 @@ class OpenAIAdapter(ExtractorAdapter):
         self.max_tokens = 4096
 
     async def extract_metadata(
-        self, text: str, doc_type: str, schema: Dict, prompt_template: str = ""
-    ) -> Dict:
+        self, text: str, doc_type: str, schema: dict, prompt_template: str = ""
+    ) -> dict:
         """Extract type-specific metadata using GPT."""
         # Use custom prompt template if provided, otherwise use generic prompt
         if prompt_template:
@@ -33,19 +33,17 @@ class OpenAIAdapter(ExtractorAdapter):
                 "{schema}", json.dumps(schema, indent=2)
             )
         else:
-            prompt = f"""Analyze this {doc_type} document and extract metadata according to the schema.
-
-Text:
-{text[:8000]}
-
-Schema:
-{json.dumps(schema, indent=2)}
-
-Extract the metadata as JSON."""
+            prompt = (
+                f"Analyze this {doc_type} document and extract metadata "
+                f"according to the schema.\n\n"
+                f"Text:\n{text[:8000]}\n\n"
+                f"Schema:\n{json.dumps(schema, indent=2)}\n\n"
+                f"Extract the metadata as JSON."
+            )
 
         return await self._extract_structured(prompt, schema, self.fast_model)
 
-    async def extract_entities(self, text: str) -> Dict:
+    async def extract_entities(self, text: str) -> dict:
         """Extract entities and relationships using GPT."""
         prompt = f"""Extract entities and relationships from this text.
 
@@ -97,9 +95,7 @@ For each relationship:
 
         return await self._extract_structured(prompt, schema, self.capable_model)
 
-    async def describe_image(
-        self, image_base64: str, context: str = ""
-    ) -> ImageDescription:
+    async def describe_image(self, image_base64: str, context: str = "") -> ImageDescription:
         """Describe an image using GPT-4 Vision."""
         prompt = f"""Describe this image in detail. Provide:
 - description: A detailed description of the image
@@ -121,9 +117,7 @@ Respond in JSON format."""
                             {"type": "text", "text": prompt},
                             {
                                 "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_base64}"
-                                },
+                                "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
                             },
                         ],
                     }
@@ -137,9 +131,7 @@ Respond in JSON format."""
 
         except Exception as e:
             logger.error(f"Error in image description: {e}")
-            return ImageDescription(
-                description="", detected_objects=[], ocr_text="", image_type=""
-            )
+            return ImageDescription(description="", detected_objects=[], ocr_text="", image_type="")
 
     async def is_available(self) -> bool:
         """Check if OpenAI API is available."""
@@ -155,7 +147,7 @@ Respond in JSON format."""
             logger.warning(f"OpenAI availability check failed: {e}")
             return False
 
-    async def _extract_structured(self, prompt: str, schema: Dict, model: str) -> Dict:
+    async def _extract_structured(self, prompt: str, schema: dict, model: str) -> dict:
         """Extract structured data using OpenAI's JSON mode."""
         try:
             response = await self.client.chat.completions.create(
@@ -163,7 +155,10 @@ Respond in JSON format."""
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a helpful assistant that extracts structured data. Always respond with valid JSON.",
+                        "content": (
+                            "You are a helpful assistant that extracts "
+                            "structured data. Always respond with valid JSON."
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -178,7 +173,7 @@ Respond in JSON format."""
             logger.error(f"Error in structured extraction: {e}")
             return self._empty_response_for_schema(schema)
 
-    def _empty_response_for_schema(self, schema: Dict) -> Dict:
+    def _empty_response_for_schema(self, schema: dict) -> dict:
         """Generate an empty response matching the schema structure."""
         result = {}
         if "properties" in schema:

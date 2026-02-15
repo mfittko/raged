@@ -1,15 +1,17 @@
 """Tests for Neo4j graph operations."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from src.graph import (
-    upsert_entity,
-    upsert_document,
     add_mention,
     add_relationship,
-    get_entity_neighborhood,
     get_entity,
+    get_entity_neighborhood,
     search_entities,
+    upsert_document,
+    upsert_entity,
 )
 
 
@@ -98,9 +100,7 @@ async def test_get_entity_neighborhood(mock_driver):
             }.get(k, d)
         ),
         "connections": [
-            MagicMock(
-                get=lambda k, d=None: {"name": "OtherClass", "type": "class"}.get(k, d)
-            )
+            MagicMock(get=lambda k, d=None: {"name": "OtherClass", "type": "class"}.get(k, d))
         ],
         "documents": [
             MagicMock(

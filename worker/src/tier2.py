@@ -1,11 +1,14 @@
 """Tier-2 NLP extraction using spaCy and other NLP libraries."""
 
-import spacy
+import logging
 import threading
-from typing import List, Dict, Optional
+
+import spacy
+
+logger = logging.getLogger(__name__)
 
 # Module-level state for lazy loading
-_nlp: Optional[spacy.Language] = None
+_nlp: spacy.Language | None = None
 _nlp_lock = threading.Lock()
 
 
@@ -28,11 +31,11 @@ def _get_nlp() -> spacy.Language:
                         f"Failed to load spaCy model 'en_core_web_sm'. "
                         f"Ensure it's installed: python -m spacy download en_core_web_sm. "
                         f"Error: {e}"
-                    )
+                    ) from e
     return _nlp
 
 
-def extract_entities(text: str) -> List[Dict[str, str]]:
+def extract_entities(text: str) -> list[dict[str, str]]:
     """Extract named entities from text using spaCy.
 
     Args:
@@ -49,7 +52,7 @@ def extract_entities(text: str) -> List[Dict[str, str]]:
     return [{"text": ent.text, "label": ent.label_} for ent in doc.ents]
 
 
-def extract_keywords(text: str, top_n: int = 10) -> List[str]:
+def extract_keywords(text: str, top_n: int = 10) -> list[str]:
     """Extract keywords/phrases from text using TextRank.
 
     Args:
@@ -82,7 +85,7 @@ def detect_language(text: str) -> str:
     Returns:
         ISO language code (e.g., 'en', 'es', 'fr') or 'unknown'
     """
-    from langdetect import detect, DetectorFactory
+    from langdetect import DetectorFactory, detect
 
     # Set seed for reproducibility
     DetectorFactory.seed = 0
@@ -94,11 +97,12 @@ def detect_language(text: str) -> str:
 
     try:
         return detect(normalized)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Language detection failed for text: {e}")
         return "unknown"
 
 
-def process_text_nlp(text: str) -> Dict:
+def process_text_nlp(text: str) -> dict:
     """Process text with spaCy in a single pass for entities and keywords.
 
     This is more efficient than calling extract_entities() and extract_keywords()

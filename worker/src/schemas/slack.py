@@ -1,7 +1,6 @@
 """Slack message metadata extraction schema."""
 
 from pydantic import BaseModel
-from typing import List
 
 
 class ActionItem(BaseModel):
@@ -15,8 +14,8 @@ class SlackMetadata(BaseModel):
     """Metadata extracted from Slack messages."""
 
     summary: str
-    decisions: List[str] = []
-    action_items: List[ActionItem] = []
+    decisions: list[str] = []
+    action_items: list[ActionItem] = []
     sentiment: str  # positive, neutral, negative
 
 

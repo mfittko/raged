@@ -1,7 +1,6 @@
 """Email metadata extraction schema."""
 
 from pydantic import BaseModel
-from typing import List
 
 
 class ActionItem(BaseModel):
@@ -16,7 +15,7 @@ class EmailMetadata(BaseModel):
 
     urgency: str  # low, normal, high, critical
     intent: str  # request, fyi, approval, escalation
-    action_items: List[ActionItem] = []
+    action_items: list[ActionItem] = []
     summary: str
 
 
