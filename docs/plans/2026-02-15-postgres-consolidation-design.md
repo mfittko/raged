@@ -2,7 +2,7 @@
 
 ## Overview
 
-Replace Qdrant (vector DB), Neo4j (graph DB), and Redis (task queue) with a single Postgres instance using pgvector. MinIO provides optional S3-compatible blob storage for large files.
+Replace Qdrant (vector DB), Neo4j (graph DB), and Redis (task queue) with a single Postgres instance using pgvector. SeaweedFS provides optional S3-compatible blob storage for large files.
 
 This is a clean break — old storage code is deleted, not abstracted behind adapters.
 Existing Qdrant/Neo4j/Redis data is not migrated in-place; this plan assumes re-indexing into Postgres from source repositories.
@@ -18,7 +18,7 @@ graph TD
 
     API[RAG API] -->|embed| OL[Ollama]
     API -->|vectors + chunks + entities + queue| PG[Postgres + pgvector]
-    API -->|large files| MINIO[MinIO / S3<br/>opt-in]
+    API -->|large files| SWF[SeaweedFS / S3<br/>opt-in]
 
     WK[Enrichment Worker] -->|poll task_queue| PG
     WK -->|update chunks + entities| PG
@@ -39,7 +39,7 @@ Current (5 services)              Target (2-3 services)
 Qdrant (vectors + payloads)    →  Postgres + pgvector
 Neo4j (entities + graph)       →  Postgres (relational tables)
 Redis (task queue)             →  Postgres (SKIP LOCKED)
-— (no raw storage)             →  MinIO (opt-in, large files)
+— (no raw storage)             →  SeaweedFS (opt-in, large files)
 Ollama (embeddings + LLM)     →  Ollama (unchanged)
 ```
 
@@ -51,7 +51,7 @@ postgres:    # Postgres 17 + pgvector
 ollama:      # Unchanged
 
 # Optional profiles
-minio:       # --profile storage
+seaweedfs:   # --profile storage
 worker:      # --profile enrichment (unchanged role)
 ```
 
@@ -65,8 +65,8 @@ DATABASE_URL=postgresql://rag:rag@localhost:5432/ragstack
 # Unchanged
 ENRICHMENT_ENABLED=false
 
-# New (optional)
-BLOB_STORE_URL=http://localhost:9000
+# New (optional, SeaweedFS S3)
+BLOB_STORE_URL=http://localhost:8333
 BLOB_STORE_ACCESS_KEY=minioadmin
 BLOB_STORE_SECRET_KEY=minioadmin
 BLOB_STORE_BUCKET=rag-raw
@@ -389,7 +389,7 @@ Postgres consolidation (this)
 | Vector search | pgvector HNSW, cosine distance | Handles millions of 768d vectors |
 | Graph storage | Relational tables + JOINs | Simple entity model, 1-2 hop lookups |
 | Task queue | SKIP LOCKED polling | Atomic dequeue, no new dependency |
-| Blob storage | MinIO opt-in | S3-compatible, local-first, large files only |
+| Blob storage | SeaweedFS opt-in | S3-compatible, actively maintained (GitHub), large files only |
 | Documents table | New first-class concept | Enables browse, raw file tracking, document metadata |
 | DB client (API) | `pg` + SQL | Lightweight, no ORM; vector operations use Postgres `pgvector` extension |
 | DB client (Worker) | `asyncpg` + `pgvector` | Async-native, works with asyncio loop |
