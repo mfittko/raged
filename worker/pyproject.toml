@@ -6,9 +6,8 @@ requires-python = ">=3.12,<3.13"
 # NOTE: Dependencies are declared here for tooling and local development.
 # Docker/CI use requirements*.lock files (generated with pip-compile) as the canonical source.
 dependencies = [
-    "redis~=5.3.1",
-    "qdrant-client~=1.16.2",
-    "neo4j~=5.28.3",
+    "asyncpg~=0.30.0",
+    "pgvector~=0.3.8",
     "spacy~=3.8.11",
     "pytextrank~=3.3.0",
     "langdetect~=1.0.9",
