@@ -3,18 +3,14 @@
 import asyncio
 import logging
 
-from qdrant_client import QdrantClient
-
-from src import graph
+from src import db
 from src.adapters import get_adapter
-from src.config import QDRANT_URL
 from src.schemas import get_schema_for_doctype
 from src.tier2 import detect_language, process_text_nlp
 
 logger = logging.getLogger(__name__)
 
-# Initialize clients
-qdrant = QdrantClient(url=QDRANT_URL)
+# Initialize adapter
 adapter = get_adapter()
 
 
@@ -22,41 +18,48 @@ async def process_task(task: dict) -> None:
     """Process a single enrichment task through the full pipeline.
 
     Args:
-        task: Task dictionary from Redis queue
+        task: Task dictionary from database queue
     """
     base_id = task["baseId"]
-    collection = task["collection"]
     doc_type = task["docType"]
     text = task["text"]
     chunk_index = task["chunkIndex"]
     total_chunks = task["totalChunks"]
-    qdrant_id = task["qdrantId"]
     source = task.get("source", "")
 
     logger.info(f"Processing task for {base_id}:{chunk_index}/{total_chunks}")
 
+    # Get document UUID from legacy base_id
+    document_id = await db.get_document_id_by_base_id(base_id)
+    if not document_id:
+        logger.error(f"Document not found for base_id: {base_id}")
+        raise ValueError(f"Document not found: {base_id}")
+
     try:
         # Update status to processing
-        await update_enrichment_status(qdrant_id, collection, "processing")
+        await db.update_chunk_status(document_id, chunk_index, "processing")
 
         # Tier 2: NLP extraction (per-chunk)
         tier2_data = await run_tier2_extraction(text)
 
-        # Update Qdrant with tier-2 results
-        await update_payload(qdrant_id, collection, {"tier2": tier2_data})
+        # Update chunk with tier-2 results
+        await db.update_chunk_tier2(document_id, chunk_index, tier2_data)
 
         # Tier 3: LLM extraction (document-level - only on last chunk)
         if chunk_index == total_chunks - 1:
-            await run_document_level_extraction(base_id, collection, doc_type, total_chunks, source)
+            await run_document_level_extraction(
+                document_id, base_id, doc_type, total_chunks, source
+            )
 
-        # Mark chunk as enriched
-        await update_enrichment_status(qdrant_id, collection, "enriched")
+        # Mark chunk as enriched (tier3 update does this, but tier2-only chunks need it)
+        if chunk_index != total_chunks - 1:
+            await db.update_chunk_status(document_id, chunk_index, "enriched")
 
         logger.info(f"Successfully processed {base_id}:{chunk_index}")
 
     except Exception as e:
-        logger.error(f"Error processing task {qdrant_id}: {e}", exc_info=True)
-        await update_enrichment_status(qdrant_id, collection, "failed")
+        logger.error(f"Error processing task {base_id}:{chunk_index}: {e}", exc_info=True)
+        await db.update_chunk_status(document_id, chunk_index, "failed")
         raise
 
 
@@ -113,13 +116,13 @@ async def run_tier2_extraction(text: str) -> dict:
 
 
 async def run_document_level_extraction(
-    base_id: str, collection: str, doc_type: str, total_chunks: int, source: str
+    document_id: str, base_id: str, doc_type: str, total_chunks: int, source: str
 ) -> None:
     """Run tier-3 LLM extraction on the full document.
 
     Args:
-        base_id: Document base ID
-        collection: Qdrant collection
+        document_id: Document UUID
+        base_id: Legacy base ID
         doc_type: Document type
         total_chunks: Number of chunks
         source: Document source
@@ -128,7 +131,7 @@ async def run_document_level_extraction(
 
     try:
         # Aggregate all chunks
-        full_text = await aggregate_chunks(base_id, collection, total_chunks)
+        full_text = await aggregate_chunks(document_id, total_chunks)
 
         # Type-specific metadata extraction
         schema_cls, prompt_template = get_schema_for_doctype(doc_type)
@@ -144,20 +147,29 @@ async def run_document_level_extraction(
         # Update all chunks with tier-3 results
         update_tasks = []
         for i in range(total_chunks):
-            chunk_id = f"{base_id}:{i}"
-            update_tasks.append(update_payload(chunk_id, collection, {"tier3": tier3_meta}))
+            update_tasks.append(db.update_chunk_tier3(document_id, i, tier3_meta))
 
         # Use return_exceptions to handle partial failures gracefully
         update_results = await asyncio.gather(*update_tasks, return_exceptions=True)
+        failed_chunk_indices: list[int] = []
         for idx, result in enumerate(update_results):
             if isinstance(result, Exception):
+                failed_chunk_indices.append(idx)
                 logger.error(
                     f"Tier-3 payload update failed for chunk {base_id}:{idx}: {result}",
                     exc_info=True,
                 )
 
-        # Write to Neo4j
-        await write_to_neo4j(base_id, doc_type, source, collection, tier3_meta, entity_result)
+        if failed_chunk_indices:
+            for idx in failed_chunk_indices:
+                await db.update_chunk_status(document_id, idx, "failed")
+            raise RuntimeError(
+                f"Tier-3 update failed for {len(failed_chunk_indices)} chunk(s): "
+                + ",".join(str(index) for index in failed_chunk_indices)
+            )
+
+        # Write entities and relationships to Postgres
+        await write_entities_to_db(document_id, base_id, tier3_meta, entity_result)
 
         logger.info(f"Completed document-level extraction for {base_id}")
 
@@ -166,39 +178,42 @@ async def run_document_level_extraction(
         raise
 
 
-async def write_to_neo4j(
+async def write_entities_to_db(
+    document_id: str,
     base_id: str,
-    doc_type: str,
-    source: str,
-    collection: str,
     tier3_meta: dict,
     entity_result: dict,
 ) -> None:
-    """Write document, entities, and relationships to Neo4j.
+    """Write document summary, entities, and relationships to Postgres.
 
     Args:
-        base_id: Document ID
-        doc_type: Document type
-        source: Document source
-        collection: Collection name
+        document_id: Document UUID
+        base_id: Legacy base ID
         tier3_meta: Tier-3 metadata
         entity_result: Entity extraction result
     """
     try:
-        # Create document node
+        # Update document summary
         summary = tier3_meta.get("summary", "")
-        await graph.upsert_document(base_id, doc_type, source, collection, summary)
+        if summary:
+            await db.update_document_summary(document_id, summary)
 
         # Create entity nodes and mentions
         entities = entity_result.get("entities", [])
+        entity_ids = []
         for entity in entities:
             entity_name = entity.get("name", "")
             entity_type = entity.get("type", "")
             entity_desc = entity.get("description", "")
 
             if entity_name:
-                await graph.upsert_entity(entity_name, entity_type, entity_desc)
-                await graph.add_mention(base_id, entity_name)
+                entity_id = await db.upsert_entity(entity_name, entity_type, entity_desc)
+                await db.add_document_mention(document_id, entity_id)
+                entity_ids.append(entity_id)
+
+        # Bulk update mention counts once after all mentions are written
+        if entity_ids:
+            await db.update_entity_mention_counts(entity_ids)
 
         # Create relationships between entities
         relationships = entity_result.get("relationships", [])
@@ -209,91 +224,30 @@ async def write_to_neo4j(
             rel_desc = rel.get("description", "")
 
             if source_entity and target_entity:
-                await graph.add_relationship(source_entity, target_entity, rel_type, rel_desc)
+                await db.add_entity_relationship(source_entity, target_entity, rel_type, rel_desc)
 
-        logger.info(f"Wrote to Neo4j: {len(entities)} entities, {len(relationships)} relationships")
+        logger.info(f"Wrote to DB: {len(entities)} entities, {len(relationships)} relationships")
 
     except Exception as e:
-        logger.warning(f"Failed to write to Neo4j for {base_id}: {e}")
-        # Don't raise - graph write is best-effort
+        logger.warning(f"Failed to write entities for {base_id}: {e}")
+        # Don't raise - entity write is best-effort
 
 
-async def aggregate_chunks(base_id: str, collection: str, total_chunks: int) -> str:
+async def aggregate_chunks(document_id: str, total_chunks: int) -> str:
     """Aggregate text from all chunks of a document.
 
     Args:
-        base_id: Document base ID
-        collection: Qdrant collection
+        document_id: Document UUID
         total_chunks: Number of chunks
 
     Returns:
         Concatenated text from all chunks
     """
-    # Build list of all chunk IDs and retrieve in a single call to avoid N+1
-    chunk_ids = [f"{base_id}:{i}" for i in range(total_chunks)]
-
     try:
-        # Run synchronous Qdrant call in thread pool to avoid blocking event loop
-        points = await asyncio.to_thread(qdrant.retrieve, collection_name=collection, ids=chunk_ids)
+        texts = await db.get_chunks_text(document_id, total_chunks)
     except Exception as e:
-        logger.warning(f"Failed to retrieve chunks for {base_id}: {e}")
+        logger.warning(f"Failed to retrieve chunks for document {document_id}: {e}")
         return ""
 
-    # Map point IDs to their text payloads
-    id_to_text = {}
-    for point in points or []:
-        payload = getattr(point, "payload", None) or {}
-        text = payload.get("text", "")
-        point_id = getattr(point, "id", None)
-        if text and point_id:
-            id_to_text[point_id] = text
-
-    # Preserve original ordering by chunk index
-    texts = []
-    for i in range(total_chunks):
-        chunk_id = f"{base_id}:{i}"
-        text = id_to_text.get(chunk_id)
-        if text:
-            texts.append(text)
-
-    return "\n\n".join(texts)
-
-
-async def update_enrichment_status(point_id: str, collection: str, status: str) -> None:
-    """Update the enrichment status of a point in Qdrant.
-
-    Args:
-        point_id: Point ID
-        collection: Collection name
-        status: New status (pending, processing, enriched, failed)
-    """
-    try:
-        # Run synchronous Qdrant call in thread pool to avoid blocking event loop
-        await asyncio.to_thread(
-            qdrant.set_payload,
-            collection_name=collection,
-            payload={"enrichmentStatus": status},
-            points=[point_id],
-        )
-    except Exception as e:
-        logger.error(f"Failed to update enrichment status for {point_id}: {e}")
-
-
-async def update_payload(point_id: str, collection: str, payload: dict) -> None:
-    """Update the payload of a point in Qdrant.
-
-    Args:
-        point_id: Point ID
-        collection: Collection name
-        payload: Payload data to merge
-    """
-    try:
-        # Run synchronous Qdrant call in thread pool to avoid blocking event loop
-        await asyncio.to_thread(
-            qdrant.set_payload,
-            collection_name=collection,
-            payload=payload,
-            points=[point_id],
-        )
-    except Exception as e:
-        logger.error(f"Failed to update payload for {point_id}: {e}")
+    # Filter out empty chunks and join
+    return "\n\n".join(text for text in texts if text)
