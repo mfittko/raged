@@ -153,9 +153,19 @@ describe("logger", () => {
 
     it("should log error messages with non-Error object", () => {
       logger.error("Error message", "string error");
-      expect(errorCalls).toHaveLength(2);
+      expect(errorCalls).toHaveLength(1);
       expect(errorCalls[0]).toBe("Error message");
-      expect(errorCalls[1]).toBe("string error");
+      expect(dirCalls).toHaveLength(1);
+      expect(dirCalls[0]).toBe("string error");
+    });
+
+    it("should use console.dir for non-Error objects", () => {
+      const errorObj = { code: 500, details: "Internal error" };
+      logger.error("Error message", errorObj);
+      expect(errorCalls).toHaveLength(1);
+      expect(errorCalls[0]).toBe("Error message");
+      expect(dirCalls).toHaveLength(1);
+      expect(dirCalls[0]).toEqual(errorObj);
     });
 
     it("should always log errors even in quiet mode", () => {

@@ -47,7 +47,12 @@ class Logger {
     } else {
       console.error(message);
       if (error) {
-        console.error(error);
+        if (error instanceof Error) {
+          console.error(error);
+        } else {
+          // Use console.dir for non-Error objects to preserve structure
+          console.dir(error, { depth: null, colors: true });
+        }
       }
     }
   }

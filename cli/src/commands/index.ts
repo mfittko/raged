@@ -50,6 +50,17 @@ export async function cmdIndex(options: IndexOptions): Promise<void> {
     process.exit(2);
   }
 
+  // Validate numeric options
+  if (!isFinite(maxFiles) || maxFiles <= 0) {
+    logger.error(`Error: --maxFiles must be a positive number, got: ${options.maxFiles}`);
+    process.exit(2);
+  }
+  
+  if (!isFinite(maxBytes) || maxBytes <= 0) {
+    logger.error(`Error: --maxBytes must be a positive number, got: ${options.maxBytes}`);
+    process.exit(2);
+  }
+
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rag-index-"));
   const repoDir = path.join(tmp, "repo");
   try {
