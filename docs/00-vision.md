@@ -55,32 +55,42 @@ What exists:
 - In-cluster indexing Job
 - Agent integrations: Claude Code skill, OpenClaw AgentSkill
 
-### v1.0 — Enrichment & Knowledge Graph (completed)
+### v1.0 — Enrichment & Knowledge Graph ✅ (completed)
 
 **Metadata extraction pipeline:**
-- **Tiered extraction:** tier-1 (sync, heuristic/AST/EXIF) → tier-2 (async, spaCy NLP) → tier-3 (async, LLM)
-- **8 document types:** code, Slack, email, meeting notes, images, PDFs, articles, text
-- **Auto-detection:** Document type inference from file extension and content
-- **Pluggable LLM adapter:** Ollama (local), Anthropic, OpenAI with smart model routing
-- **Async enrichment worker** in Python with Redis task queue
+- ✅ **Tiered extraction:** tier-1 (sync, heuristic/AST/EXIF) → tier-2 (async, spaCy NLP) → tier-3 (async, LLM)
+- ✅ **9 document types:** code, Slack, email, meeting notes, images, PDFs, articles, text, generic
+- ✅ **Auto-detection:** Document type inference from file extension and content
+- ✅ **Pluggable LLM adapter:** Ollama (local), Anthropic, OpenAI with smart model routing
+- ✅ **Async enrichment worker** in Python with Redis task queue
+- ✅ **Retry logic:** Exponential backoff with dead-letter queue for failed tasks
+- ✅ **Status tracking:** Per-document enrichment status via `/enrichment/status/:baseId`
 
 **Knowledge graph:**
-- **Neo4j graph storage:** Entity and relationship storage
-- **Entity extraction:** NER via spaCy (tier-2) and LLM (tier-3)
-- **Relationship extraction:** Automatic discovery of entity relationships
-- **Hybrid retrieval:** Vector search + graph expansion via `graphExpand` parameter
-- **Graph queries:** Direct entity lookup via `/graph/entity/:name`
+- ✅ **Neo4j graph storage:** Entity and relationship storage with indexed lookups
+- ✅ **Entity extraction:** NER via spaCy (tier-2) and LLM-based extraction (tier-3)
+- ✅ **Relationship extraction:** Automatic discovery of entity relationships
+- ✅ **Hybrid retrieval:** Vector search + graph expansion via `graphExpand` parameter
+- ✅ **Graph queries:** Direct entity lookup via `/graph/entity/:name`
+- ✅ **Document linking:** Track which documents mention which entities
+
+**API endpoints:**
+- ✅ `GET /enrichment/status/:baseId` — Check enrichment status for a document
+- ✅ `GET /enrichment/stats` — System-wide enrichment statistics
+- ✅ `POST /enrichment/enqueue` — Manually trigger enrichment tasks
+- ✅ `GET /graph/entity/:name` — Query entity details and connections
 
 **CLI enhancements:**
-- `rag-index ingest` — Ingest arbitrary files (PDFs, images, Slack exports)
-- `rag-index enrich` — Trigger and monitor enrichment
-- `rag-index graph` — Query knowledge graph entities
-- `--enrich` / `--no-enrich` / `--doc-type` flags on all commands
+- ✅ `rag-index ingest` — Ingest arbitrary files (PDFs, images, Slack exports)
+- ✅ `rag-index enrich` — Trigger and monitor enrichment with `--force` and `--stats-only` flags
+- ✅ `rag-index graph` — Query knowledge graph entities
+- ✅ `--enrich` / `--no-enrich` / `--doc-type` flags on all ingest commands
 
 **Infrastructure:**
-- Docker Compose profiles: `--profile enrichment` for full stack
-- Helm chart: all enrichment resources gated on `enrichment.enabled`
-- Backwards-compatible: existing API/CLI behavior unchanged when enrichment disabled
+- ✅ Docker Compose profiles: `--profile enrichment` for full stack (Redis, Neo4j, worker)
+- ✅ Helm chart: all enrichment resources gated on `enrichment.enabled`
+- ✅ Backwards-compatible: existing API/CLI behavior unchanged when enrichment disabled
+- ✅ Environment-driven configuration: `ENRICHMENT_ENABLED`, `NEO4J_URL`, `REDIS_URL`
 
 ### v2.0 — Production Hardening + Multi-Agent Hub (planned)
 

@@ -177,6 +177,8 @@ sequenceDiagram
 
 ## Query Data Flow
 
+### Basic Vector Search
+
 ```mermaid
 sequenceDiagram
     participant U as User / Agent
@@ -193,6 +195,30 @@ sequenceDiagram
     Q-->>A: Ranked results
     A-->>C: { results: [...] }
     C-->>U: Display results
+```
+
+### Hybrid Vector + Graph Search
+
+```mermaid
+sequenceDiagram
+    participant U as User / Agent
+    participant C as CLI
+    participant A as RAG API
+    participant O as Ollama
+    participant Q as Qdrant
+    participant N as Neo4j
+
+    U->>C: rag-index query --q "auth flow" (with graphExpand)
+    C->>A: POST /query { query, topK, graphExpand: true }
+    A->>O: POST /api/embeddings { prompt }
+    O-->>A: 768d vector
+    A->>Q: search(vector, limit, filter)
+    Q-->>A: Ranked results with tier2/tier3 metadata
+    A->>A: Extract entities from results
+    A->>N: expandEntities(entities, depth=2)
+    N-->>A: Expanded entity graph
+    A-->>C: { results: [...], graph: {...} }
+    C-->>U: Display results + related entities
 ```
 
 ## Security Model
