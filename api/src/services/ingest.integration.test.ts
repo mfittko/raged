@@ -2,39 +2,33 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Fastify from "fastify";
 import { registerAuth } from "../auth.js";
 import { registerErrorHandler } from "../errors.js";
-import { ingest } from "./ingest.js";
+import { ingest, type QdrantPoint } from "./ingest.js";
 import { validateIngestRequest } from "./ingest-validation.js";
 import { ingestSchema } from "../schemas.js";
 import type { IngestRequest, IngestDeps } from "./ingest.js";
 
 // Mock the redis module
-vi.mock("../redis.js", () => {
-  const mockEnqueue = vi.fn(async () => {});
-  const mockIsEnabled = vi.fn(() => false);
-  return {
-    enqueueEnrichment: mockEnqueue,
-    isEnrichmentEnabled: mockIsEnabled,
-    __mockEnqueue: mockEnqueue,
-    __mockIsEnabled: mockIsEnabled,
-  };
-});
+vi.mock("../redis.js", () => ({
+  enqueueEnrichment: vi.fn(async () => {}),
+  isEnrichmentEnabled: vi.fn(() => false),
+}));
 
 // Mock url-fetch and url-extract modules
-vi.mock("./url-fetch.js", () => {
-  const mockFetchUrls = vi.fn();
-  return {
-    fetchUrls: mockFetchUrls,
-    __mockFetchUrls: mockFetchUrls,
-  };
-});
+vi.mock("./url-fetch.js", () => ({
+  fetchUrls: vi.fn(),
+}));
 
-vi.mock("./url-extract.js", () => {
-  const mockExtractContentAsync = vi.fn();
-  return {
-    extractContentAsync: mockExtractContentAsync,
-    __mockExtractContentAsync: mockExtractContentAsync,
-  };
-});
+vi.mock("./url-extract.js", () => ({
+  extractContentAsync: vi.fn(),
+}));
+
+// Import mocked modules to get typed references
+import { fetchUrls } from "./url-fetch.js";
+import { extractContentAsync } from "./url-extract.js";
+
+// Get typed mock references
+const mockFetchUrls = vi.mocked(fetchUrls);
+const mockExtractContentAsync = vi.mocked(extractContentAsync);
 
 function buildIntegrationTestApp(options?: {
   ingestDeps?: Partial<IngestDeps>;
@@ -90,10 +84,6 @@ describe("ingest integration tests", () => {
 
   describe("happy path - URL ingestion", () => {
     it("HTML URL → Readability extraction → chunked and upserted with correct metadata", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const urlExtract = await import("./url-extract.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
-      const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map([
@@ -140,7 +130,7 @@ describe("ingest integration tests", () => {
 
       // Verify fetch metadata in upserted point
       expect(upsertMock).toHaveBeenCalled();
-      const points = (upsertMock.mock.calls[0] as any)[1];
+      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
       expect(points[0].payload.text).toBe("Article content here");
       expect(points[0].payload.fetchedUrl).toBe("https://example.com/article");
       expect(points[0].payload.resolvedUrl).toBe("https://example.com/article");
@@ -154,10 +144,6 @@ describe("ingest integration tests", () => {
     });
 
     it("PDF URL → pdf-parse extraction → chunked with page metadata", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const urlExtract = await import("./url-extract.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
-      const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map([
@@ -202,7 +188,7 @@ describe("ingest integration tests", () => {
       expect(body.upserted).toBe(1);
       expect(body.fetched).toBe(1);
 
-      const points = (upsertMock.mock.calls[0] as any)[1];
+      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
       expect(points[0].payload.text).toBe("PDF text content extracted");
       expect(points[0].payload.extractionStrategy).toBe("pdf-parse");
 
@@ -210,10 +196,6 @@ describe("ingest integration tests", () => {
     });
 
     it("plain text URL → passthrough → ingested as-is", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const urlExtract = await import("./url-extract.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
-      const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map([
@@ -256,7 +238,7 @@ describe("ingest integration tests", () => {
       expect(body.ok).toBe(true);
       expect(body.upserted).toBe(1);
 
-      const points = (upsertMock.mock.calls[0] as any)[1];
+      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
       expect(points[0].payload.text).toBe("Plain text content");
       expect(points[0].payload.extractionStrategy).toBe("passthrough");
 
@@ -264,10 +246,6 @@ describe("ingest integration tests", () => {
     });
 
     it("JSON URL → pretty-printed → ingested as text", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const urlExtract = await import("./url-extract.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
-      const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
 
       const jsonData = { key: "value", nested: { prop: 123 } };
       mockFetchUrls.mockResolvedValue({
@@ -311,7 +289,7 @@ describe("ingest integration tests", () => {
       expect(body.ok).toBe(true);
       expect(body.upserted).toBe(1);
 
-      const points = (upsertMock.mock.calls[0] as any)[1];
+      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
       expect(points[0].payload.text).toBe(JSON.stringify(jsonData, null, 2));
       expect(points[0].payload.extractionStrategy).toBe("json-pretty");
 
@@ -321,10 +299,6 @@ describe("ingest integration tests", () => {
 
   describe("mixed batches", () => {
     it("3 text items + 2 URL items in one request → all 5 processed", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const urlExtract = await import("./url-extract.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
-      const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map([
@@ -395,10 +369,6 @@ describe("ingest integration tests", () => {
     });
 
     it("2 URL items + 1 failing URL → 2 succeed, 1 error, upserted reflects successes", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const urlExtract = await import("./url-extract.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
-      const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map([
@@ -479,8 +449,6 @@ describe("ingest integration tests", () => {
 
   describe("error cases", () => {
     it("URL that times out → error with reason: timeout", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map(),
@@ -516,8 +484,6 @@ describe("ingest integration tests", () => {
     });
 
     it("URL returning 404 → error with reason: fetch_failed, status: 404", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map(),
@@ -552,10 +518,6 @@ describe("ingest integration tests", () => {
     });
 
     it("URL with unsupported content type → error with reason: unsupported_content_type", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const urlExtract = await import("./url-extract.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
-      const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map([
@@ -603,8 +565,6 @@ describe("ingest integration tests", () => {
     });
 
     it("SSRF attempt (private IP URL) → error with reason: ssrf_blocked", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map(),
@@ -684,7 +644,7 @@ describe("ingest integration tests", () => {
       expect(body.fetched).toBeUndefined();
       expect(body.errors).toBeUndefined();
 
-      const points = (upsertMock.mock.calls[0] as any)[1];
+      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
       expect(points[0].payload.text).toBe("hello world");
       expect(points[0].payload.source).toBe("test.txt");
       expect(points[0].payload.fetchedUrl).toBeUndefined();
@@ -693,8 +653,6 @@ describe("ingest integration tests", () => {
     });
 
     it("item with both text and url → text used, url stored in metadata, no fetch", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
       mockFetchUrls.mockClear();
 
       const upsertMock = vi.fn(async () => {});
@@ -726,7 +684,7 @@ describe("ingest integration tests", () => {
       expect(mockFetchUrls).not.toHaveBeenCalled();
 
       // Verify text was used and url stored in metadata
-      const points = (upsertMock.mock.calls[0] as any)[1];
+      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
       expect(points[0].payload.text).toBe("Provided text content");
       expect(points[0].payload.source).toBe("my-source");
       expect(points[0].payload.itemUrl).toBe("https://example.com/doc");
@@ -738,10 +696,6 @@ describe("ingest integration tests", () => {
 
   describe("metadata verification", () => {
     it("URL-fetched item has all required fetch metadata in Qdrant payload", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const urlExtract = await import("./url-extract.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
-      const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map([
@@ -782,7 +736,7 @@ describe("ingest integration tests", () => {
 
       expect(res.statusCode).toBe(200);
 
-      const points = (upsertMock.mock.calls[0] as any)[1];
+      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
       const payload = points[0].payload;
 
       // Verify all required fetch metadata fields
@@ -798,10 +752,6 @@ describe("ingest integration tests", () => {
     });
 
     it("redirect chain → resolvedUrl differs from fetchedUrl", async () => {
-      const urlFetch = await import("./url-fetch.js");
-      const urlExtract = await import("./url-extract.js");
-      const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
-      const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
 
       mockFetchUrls.mockResolvedValue({
         results: new Map([
@@ -841,7 +791,7 @@ describe("ingest integration tests", () => {
 
       expect(res.statusCode).toBe(200);
 
-      const points = (upsertMock.mock.calls[0] as any)[1];
+      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
       const payload = points[0].payload;
 
       // Verify redirect chain is captured
