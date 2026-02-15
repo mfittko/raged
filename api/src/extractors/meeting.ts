@@ -11,6 +11,11 @@ export interface MeetingMetadata {
 export function extractMeeting(item: IngestItem): MeetingMetadata {
   const result: MeetingMetadata = {};
   const text = item.text;
+  
+  // Early return if no text available
+  if (!text) {
+    return result;
+  }
 
   // Extract date
   const dateMatch = text.match(/(?:meeting\s+)?date:\s*([^\n]+)/i);

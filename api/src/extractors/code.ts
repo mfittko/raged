@@ -36,17 +36,26 @@ const extToLang: Record<string, string> = {
 
 export function extractCode(item: IngestItem): CodeMetadata {
   const result: CodeMetadata = {};
-
+  
   // Extract language from file extension
-  const extMatch = item.source.match(/\.([a-z0-9]+)$/i);
-  if (extMatch) {
-    const ext = "." + extMatch[1].toLowerCase();
-    result.lang = extToLang[ext] || ext.substring(1);
+  const source = item.source;
+  if (source) {
+    const extMatch = source.match(/\.([a-z0-9]+)$/i);
+    if (extMatch) {
+      const ext = "." + extMatch[1].toLowerCase();
+      result.lang = extToLang[ext] || ext.substring(1);
+    }
   }
 
   // Simple regex-based extraction for common patterns
   // (This is a simplified version; full implementation would use Tree-sitter)
   const text = item.text;
+  
+  // Early return if no text available
+  if (!text) {
+    return result;
+  }
+  
   const MAX_EXTRACTIONS = 100;
 
   // Extract function names

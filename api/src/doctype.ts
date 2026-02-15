@@ -10,8 +10,9 @@ export type DocType =
 
 export interface IngestItem {
   id?: string;
-  text: string;
-  source: string;
+  text?: string;       // optional when url is provided
+  url?: string;        // new: URL to fetch and extract
+  source?: string;     // optional (auto-set from url if not provided)
   docType?: DocType;
   metadata?: Record<string, unknown>;
 }
@@ -73,7 +74,8 @@ export function detectDocType(item: IngestItem): DocType {
   }
 
   // 3. Source URL patterns
-  const sourceLower = item.source.toLowerCase();
+  const source = item.source || item.url || "";
+  const sourceLower = source.toLowerCase();
   // Use URL parsing for more secure host detection
   try {
     const url = new URL(sourceLower);
@@ -89,7 +91,29 @@ export function detectDocType(item: IngestItem): DocType {
     // Not a valid URL, fall through to other detection methods
   }
 
-  // 4. Content sniffing
+  // 4. Content sniffing (skip if no text available)
+  if (!item.text) {
+    // No text available, use source extension if we have it
+    const extMatch = source.match(/\.([a-z0-9]+)$/i);
+    if (extMatch) {
+      const ext = "." + extMatch[1].toLowerCase();
+
+      if (CODE_EXTENSIONS.has(ext)) {
+        return "code";
+      }
+      if (ext === ".pdf") {
+        return "pdf";
+      }
+      if (IMAGE_EXTENSIONS.has(ext)) {
+        return "image";
+      }
+      if (ARTICLE_EXTENSIONS.has(ext)) {
+        return "article";
+      }
+    }
+    return "text";
+  }
+
   const contentStart = item.text.substring(0, 500);
 
   // Email: RFC 2822 headers
@@ -126,7 +150,7 @@ export function detectDocType(item: IngestItem): DocType {
   }
 
   // 5. File extension from source
-  const extMatch = item.source.match(/\.([a-z0-9]+)$/i);
+  const extMatch = source.match(/\.([a-z0-9]+)$/i);
   if (extMatch) {
     const ext = "." + extMatch[1].toLowerCase();
 

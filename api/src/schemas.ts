@@ -12,10 +12,11 @@ export const ingestSchema = {
         maxItems: 1000,
         items: {
           type: "object" as const,
-          required: ["text", "source"],
+          required: [],  // Conditional validation in preValidation hook
           properties: {
             id: { type: "string" as const },
             text: { type: "string" as const, minLength: 1, pattern: "\\S" },
+            url: { type: "string" as const, format: "uri", pattern: "^https?://" },
             source: { type: "string" as const, minLength: 1, pattern: "\\S" },
             docType: {
               type: "string" as const,

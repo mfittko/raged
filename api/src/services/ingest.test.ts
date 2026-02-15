@@ -14,6 +14,23 @@ vi.mock("../redis.js", () => {
   };
 });
 
+// Mock url-fetch and url-extract modules
+vi.mock("./url-fetch.js", () => {
+  const mockFetchUrls = vi.fn();
+  return {
+    fetchUrls: mockFetchUrls,
+    __mockFetchUrls: mockFetchUrls,
+  };
+});
+
+vi.mock("./url-extract.js", () => {
+  const mockExtractContentAsync = vi.fn();
+  return {
+    extractContentAsync: mockExtractContentAsync,
+    __mockExtractContentAsync: mockExtractContentAsync,
+  };
+});
+
 function makeDeps(overrides?: Partial<IngestDeps>): IngestDeps {
   return {
     embed: overrides?.embed ?? vi.fn(async (texts: string[]) =>
@@ -250,5 +267,342 @@ describe("ingest service", () => {
     // No enrichment response when disabled
     expect(result.enrichment).toBeUndefined();
     expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("fetches and ingests URL items without text", async () => {
+    const urlFetch = await import("./url-fetch.js");
+    const urlExtract = await import("./url-extract.js");
+    const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
+    const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
+
+    // Setup mock responses
+    mockFetchUrls.mockResolvedValue({
+      results: new Map([
+        [
+          "https://example.com/article",
+          {
+            url: "https://example.com/article",
+            resolvedUrl: "https://example.com/article",
+            contentType: "text/html",
+            status: 200,
+            body: Buffer.from("<html><body>Article content</body></html>"),
+            fetchedAt: "2024-01-01T00:00:00Z",
+          },
+        ],
+      ]),
+      errors: [],
+    });
+
+    mockExtractContentAsync.mockResolvedValue({
+      text: "Article content",
+      title: "Example Article",
+      strategy: "readability",
+      contentType: "text/html",
+    });
+
+    const upsertMock = vi.fn(async () => {});
+    const deps = makeDeps({ upsert: upsertMock });
+    const request: IngestRequest = {
+      items: [{ url: "https://example.com/article" }],
+    };
+
+    const result = await ingest(request, deps);
+
+    // Verify fetch was called
+    expect(mockFetchUrls).toHaveBeenCalledWith(["https://example.com/article"]);
+    expect(mockExtractContentAsync).toHaveBeenCalled();
+
+    // Verify result includes fetched count
+    expect(result.fetched).toBe(1);
+    expect(result.upserted).toBe(1);
+
+    // Verify upserted point has fetch metadata
+    const points = (upsertMock.mock.calls[0] as any)[1];
+    expect(points).toBeDefined();
+    expect(points[0].payload.text).toBe("Article content");
+    expect(points[0].payload.fetchedUrl).toBe("https://example.com/article");
+    expect(points[0].payload.resolvedUrl).toBe("https://example.com/article");
+    expect(points[0].payload.contentType).toBe("text/html");
+    expect(points[0].payload.fetchStatus).toBe(200);
+    expect(points[0].payload.extractionStrategy).toBe("readability");
+    expect(points[0].payload.extractedTitle).toBe("Example Article");
+
+    // Cleanup
+    mockFetchUrls.mockClear();
+    mockExtractContentAsync.mockClear();
+  });
+
+  it("uses provided text for URL items with both url and text", async () => {
+    const urlFetch = await import("./url-fetch.js");
+    const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
+
+    const upsertMock = vi.fn(async () => {});
+    const deps = makeDeps({ upsert: upsertMock });
+    const request: IngestRequest = {
+      items: [
+        {
+          url: "https://example.com/doc",
+          text: "Pre-provided text",
+          source: "my-source",
+        },
+      ],
+    };
+
+    const result = await ingest(request, deps);
+
+    // Fetch should not be called when text is already provided
+    expect(mockFetchUrls).not.toHaveBeenCalled();
+
+    // Verify text was used as-is
+    const points = (upsertMock.mock.calls[0] as any)[1];
+    expect(points).toBeDefined();
+    expect(points[0].payload.text).toBe("Pre-provided text");
+    expect(points[0].payload.source).toBe("my-source");
+    expect(points[0].payload.itemUrl).toBe("https://example.com/doc");
+
+    // No fetch metadata should be present
+    expect(points[0].payload.fetchedUrl).toBeUndefined();
+  });
+
+  it("auto-sets source from URL when text is provided but source is omitted", async () => {
+    const urlFetch = await import("./url-fetch.js");
+    const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
+
+    const upsertMock = vi.fn(async () => {});
+    const deps = makeDeps({ upsert: upsertMock });
+    const request: IngestRequest = {
+      items: [
+        {
+          url: "https://example.com/doc-without-source?q=1",
+          text: "Provided text without explicit source",
+        },
+      ],
+    };
+
+    await ingest(request, deps);
+
+    expect(mockFetchUrls).not.toHaveBeenCalled();
+
+    const points = (upsertMock.mock.calls[0] as any)[1];
+    expect(points).toBeDefined();
+    expect(points[0].payload.text).toBe("Provided text without explicit source");
+    expect(points[0].payload.source).toBe("https://example.com/doc-without-source");
+    expect(points[0].payload.itemUrl).toBe("https://example.com/doc-without-source?q=1");
+    expect(points[0].payload.fetchedUrl).toBeUndefined();
+  });
+
+  it("auto-sets source from URL when not provided", async () => {
+    const urlFetch = await import("./url-fetch.js");
+    const urlExtract = await import("./url-extract.js");
+    const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
+    const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
+
+    mockFetchUrls.mockResolvedValue({
+      results: new Map([
+        [
+          "https://example.com/path/to/article",
+          {
+            url: "https://example.com/path/to/article",
+            resolvedUrl: "https://example.com/path/to/article",
+            contentType: "text/html",
+            status: 200,
+            body: Buffer.from("<html>content</html>"),
+            fetchedAt: "2024-01-01T00:00:00Z",
+          },
+        ],
+      ]),
+      errors: [],
+    });
+
+    mockExtractContentAsync.mockResolvedValue({
+      text: "Content",
+      strategy: "readability",
+      contentType: "text/html",
+    });
+
+    const upsertMock = vi.fn(async () => {});
+    const deps = makeDeps({ upsert: upsertMock });
+    const request: IngestRequest = {
+      items: [{ url: "https://example.com/path/to/article" }],
+    };
+
+    await ingest(request, deps);
+
+    const points = (upsertMock.mock.calls[0] as any)[1];
+    expect(points).toBeDefined();
+    expect(points[0].payload.source).toBe("https://example.com/path/to/article");
+
+    mockFetchUrls.mockClear();
+    mockExtractContentAsync.mockClear();
+  });
+
+  it("handles mixed batch of text and URL items", async () => {
+    const urlFetch = await import("./url-fetch.js");
+    const urlExtract = await import("./url-extract.js");
+    const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
+    const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
+
+    mockFetchUrls.mockResolvedValue({
+      results: new Map([
+        [
+          "https://example.com/doc",
+          {
+            url: "https://example.com/doc",
+            resolvedUrl: "https://example.com/doc",
+            contentType: "text/plain",
+            status: 200,
+            body: Buffer.from("Fetched content"),
+            fetchedAt: "2024-01-01T00:00:00Z",
+          },
+        ],
+      ]),
+      errors: [],
+    });
+
+    mockExtractContentAsync.mockResolvedValue({
+      text: "Fetched content",
+      strategy: "passthrough",
+      contentType: "text/plain",
+    });
+
+    const upsertMock = vi.fn(async () => {});
+    const deps = makeDeps({ upsert: upsertMock });
+    const request: IngestRequest = {
+      items: [
+        { text: "Direct text item", source: "direct.txt" },
+        { url: "https://example.com/doc" },
+      ],
+    };
+
+    const result = await ingest(request, deps);
+
+    // Both items should be processed
+    expect(result.upserted).toBe(2);
+    expect(result.fetched).toBe(1);
+
+    // Verify fetch was only called for URL item
+    expect(mockFetchUrls).toHaveBeenCalledWith(["https://example.com/doc"]);
+
+    mockFetchUrls.mockClear();
+    mockExtractContentAsync.mockClear();
+  });
+
+  it("reports fetch failures in errors array", async () => {
+    const urlFetch = await import("./url-fetch.js");
+    const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
+
+    mockFetchUrls.mockResolvedValue({
+      results: new Map(),
+      errors: [
+        {
+          url: "https://example.com/notfound",
+          status: 404,
+          reason: "fetch_failed",
+        },
+      ],
+    });
+
+    const deps = makeDeps();
+    const request: IngestRequest = {
+      items: [{ url: "https://example.com/notfound" }],
+    };
+
+    const result = await ingest(request, deps);
+
+    // No items should be upserted
+    expect(result.upserted).toBe(0);
+    expect(result.fetched).toBeUndefined();
+
+    // Error should be reported
+    expect(result.errors).toBeDefined();
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors![0].url).toBe("https://example.com/notfound");
+    expect(result.errors![0].status).toBe(404);
+    expect(result.errors![0].reason).toBe("fetch_failed");
+
+    mockFetchUrls.mockClear();
+  });
+
+  it("reports unsupported content type in errors array", async () => {
+    const urlFetch = await import("./url-fetch.js");
+    const urlExtract = await import("./url-extract.js");
+    const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
+    const mockExtractContentAsync = (urlExtract as any).__mockExtractContentAsync;
+
+    mockFetchUrls.mockResolvedValue({
+      results: new Map([
+        [
+          "https://example.com/binary",
+          {
+            url: "https://example.com/binary",
+            resolvedUrl: "https://example.com/binary",
+            contentType: "application/octet-stream",
+            status: 200,
+            body: Buffer.from([0x00, 0x01, 0x02]),
+            fetchedAt: "2024-01-01T00:00:00Z",
+          },
+        ],
+      ]),
+      errors: [],
+    });
+
+    mockExtractContentAsync.mockResolvedValue({
+      text: null,
+      strategy: "metadata-only",
+      contentType: "application/octet-stream",
+    });
+
+    const deps = makeDeps();
+    const request: IngestRequest = {
+      items: [{ url: "https://example.com/binary" }],
+    };
+
+    const result = await ingest(request, deps);
+
+    // No items should be upserted
+    expect(result.upserted).toBe(0);
+    expect(result.fetched).toBeUndefined();
+
+    // Error should be reported with unsupported content type reason
+    expect(result.errors).toBeDefined();
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors![0].url).toBe("https://example.com/binary");
+    expect(result.errors![0].status).toBe(200);
+    expect(result.errors![0].reason).toBe("unsupported_content_type: application/octet-stream");
+
+    mockFetchUrls.mockClear();
+    mockExtractContentAsync.mockClear();
+  });
+
+  it("maintains backward compatibility with text-only items", async () => {
+    const urlFetch = await import("./url-fetch.js");
+    const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
+    
+    // Clear previous mock calls
+    mockFetchUrls.mockClear();
+
+    const upsertMock = vi.fn(async () => {});
+    const deps = makeDeps({ upsert: upsertMock });
+    const request: IngestRequest = {
+      items: [
+        { text: "hello world", source: "test.txt" },
+        { text: "another doc", source: "doc.txt", id: "doc-1" },
+      ],
+    };
+
+    const result = await ingest(request, deps);
+
+    // Fetch should not be called
+    expect(mockFetchUrls).not.toHaveBeenCalled();
+
+    // Standard behavior should be preserved
+    expect(result.upserted).toBe(2);
+    expect(result.fetched).toBeUndefined();
+    expect(result.errors).toBeUndefined();
+
+    const points = (upsertMock.mock.calls[0] as any)[1];
+    expect(points).toBeDefined();
+    expect(points[0].payload.text).toBe("hello world");
+    expect(points[0].payload.source).toBe("test.txt");
   });
 });

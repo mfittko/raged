@@ -1,11 +1,22 @@
 import { describe, it, expect } from "vitest";
 import Fastify from "fastify";
 import { ingestSchema, querySchema } from "./schemas.js";
+import type { IngestRequest } from "./services/ingest.js";
+import { validateIngestRequest } from "./services/ingest-validation.js";
 
 describe("ingest schema validation", () => {
   function buildApp() {
     const app = Fastify();
-    app.post("/ingest", { schema: ingestSchema }, async () => {
+    app.post("/ingest", {
+      schema: ingestSchema,
+      preValidation: async (req, reply) => {
+        const body = req.body as IngestRequest;
+        const validationError = validateIngestRequest(body);
+        if (validationError) {
+          return reply.status(400).send(validationError);
+        }
+      }
+    }, async () => {
       return { ok: true };
     });
     return app;
@@ -33,29 +44,29 @@ describe("ingest schema validation", () => {
     await app.close();
   });
 
-  it("rejects item without text", async () => {
+  it("accepts item with only URL (no text)", async () => {
     const app = buildApp();
     const res = await app.inject({
       method: "POST",
       url: "/ingest",
       payload: {
-        items: [{ source: "test.txt" }],
+        items: [{ url: "https://example.com/doc" }],
       },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
     await app.close();
   });
 
-  it("rejects item without source", async () => {
+  it("accepts item without source when URL is provided", async () => {
     const app = buildApp();
     const res = await app.inject({
       method: "POST",
       url: "/ingest",
       payload: {
-        items: [{ text: "hello" }],
+        items: [{ url: "https://example.com/doc" }],
       },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
     await app.close();
   });
 
@@ -101,6 +112,111 @@ describe("ingest schema validation", () => {
           },
         ],
       },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("accepts URL item without text", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: {
+        items: [{ url: "https://example.com/article" }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("accepts URL item with source", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: {
+        items: [{ url: "https://example.com/article", source: "my-source" }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("accepts URL item with both url and text", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: {
+        items: [
+          {
+            url: "https://example.com/article",
+            text: "Pre-provided text",
+            source: "my-source",
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("rejects item with neither text nor url", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: {
+        items: [{ source: "test.txt" }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects URL with non-HTTP(S) protocol", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: {
+        items: [{ url: "ftp://example.com/file" }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects more than 50 URL items per request", async () => {
+    const app = buildApp();
+    const items = Array.from({ length: 51 }, (_, i) => ({
+      url: `https://example.com/doc-${i}`,
+    }));
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: { items },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body);
+    expect(body.error).toContain("maximum 50 URL items");
+    await app.close();
+  });
+
+  it("accepts 50 URL items and 950 text items (1000 total)", async () => {
+    const app = buildApp();
+    const urlItems = Array.from({ length: 50 }, (_, i) => ({
+      url: `https://example.com/doc-${i}`,
+    }));
+    const textItems = Array.from({ length: 950 }, (_, i) => ({
+      text: `doc ${i}`,
+      source: `test-${i}.txt`,
+    }));
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: { items: [...urlItems, ...textItems] },
     });
     expect(res.statusCode).toBe(200);
     await app.close();

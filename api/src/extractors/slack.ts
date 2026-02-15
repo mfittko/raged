@@ -12,8 +12,20 @@ export function extractSlack(item: IngestItem): SlackMetadata {
   const result: SlackMetadata = {};
 
   // Try to parse as JSON (Slack export format)
+  const text = item.text;
+  if (!text) {
+    // No text, try metadata fallback
+    if (item.metadata?.channel) {
+      result.channel = String(item.metadata.channel);
+    }
+    if (item.metadata?.threadId) {
+      result.threadId = String(item.metadata.threadId);
+    }
+    return result;
+  }
+  
   try {
-    const parsed = JSON.parse(item.text);
+    const parsed = JSON.parse(text);
 
     // Single message format
     if (parsed.channel) {

@@ -6,6 +6,7 @@ import { registerErrorHandler } from "./errors.js";
 import { ingest } from "./services/ingest.js";
 import { query } from "./services/query.js";
 import { getEnrichmentStatus, getEnrichmentStats, enqueueEnrichment as enqueueEnrichmentService } from "./services/enrichment.js";
+import { validateIngestRequest } from "./services/ingest-validation.js";
 import { ingestSchema, querySchema, enrichmentStatusSchema, enrichmentEnqueueSchema, graphEntitySchema } from "./schemas.js";
 import type { IngestRequest } from "./services/ingest.js";
 import type { QueryRequest } from "./services/query.js";
@@ -20,7 +21,16 @@ export function buildApp() {
 
   app.get("/healthz", async () => ({ ok: true }));
 
-  app.post("/ingest", { schema: ingestSchema }, async (req) => {
+  app.post("/ingest", { 
+    schema: ingestSchema,
+    preValidation: async (req, reply) => {
+      const body = req.body as IngestRequest;
+      const validationError = validateIngestRequest(body);
+      if (validationError) {
+        return reply.status(400).send(validationError);
+      }
+    }
+  }, async (req) => {
     const body = req.body as IngestRequest;
     return ingest(body, {
       embed,
