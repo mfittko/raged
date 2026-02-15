@@ -1,12 +1,11 @@
 """Postgres database client using asyncpg connection pool."""
 
 import logging
-import os
 from typing import Any
 
 import asyncpg
 
-from src.config import DATABASE_URL
+from src.config import DATABASE_URL, QUEUE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +56,7 @@ async def dequeue_task(worker_id: str) -> dict[str, Any] | None:
     query = """
         WITH next AS (
             SELECT id FROM task_queue
-            WHERE queue = 'enrichment' AND status = 'pending' AND run_after <= now()
+            WHERE queue = $1 AND status = 'pending' AND run_after <= now()
             ORDER BY run_after, created_at
             LIMIT 1
             FOR UPDATE SKIP LOCKED
@@ -66,7 +65,7 @@ async def dequeue_task(worker_id: str) -> dict[str, Any] | None:
             status = 'processing',
             started_at = now(),
             lease_expires_at = now() + interval '5 minutes',
-            leased_by = $1
+            leased_by = $2
         FROM next 
         WHERE task_queue.id = next.id
         RETURNING 
@@ -77,7 +76,7 @@ async def dequeue_task(worker_id: str) -> dict[str, Any] | None:
     """
     
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(query, worker_id)
+        row = await conn.fetchrow(query, QUEUE_NAME, worker_id)
         
         if row is None:
             return None
@@ -369,9 +368,9 @@ async def add_entity_relationship(
     """
     pool = await get_pool()
     
-    # Get or create both entities first
-    source_id = await upsert_entity(source_name, "", "")
-    target_id = await upsert_entity(target_name, "", "")
+    # Get or create both entities first (use 'unknown' for empty type to ensure data quality)
+    source_id = await upsert_entity(source_name, "unknown", "")
+    target_id = await upsert_entity(target_name, "unknown", "")
     
     query = """
         INSERT INTO entity_relationships (source_id, target_id, relationship_type, description)
