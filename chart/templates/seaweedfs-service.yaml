@@ -1,0 +1,18 @@
+{{- if .Values.seaweedfs.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-seaweedfs
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: { app: {{ .Release.Name }}-seaweedfs }
+  ports:
+    - port: {{ .Values.seaweedfs.service.s3Port }}
+      targetPort: 8333
+      name: s3
+    - port: {{ .Values.seaweedfs.service.masterPort }}
+      targetPort: 9333
+      name: master
+{{- end }}

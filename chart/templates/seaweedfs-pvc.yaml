@@ -1,0 +1,14 @@
+{{- if .Values.seaweedfs.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-seaweedfs-data
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources: { requests: { storage: {{ .Values.seaweedfs.storage.size }} } }
+  {{- if .Values.seaweedfs.storage.storageClassName }}
+  storageClassName: {{ .Values.seaweedfs.storage.storageClassName }}
+  {{- end }}
+{{- end }}

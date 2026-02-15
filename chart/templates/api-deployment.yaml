@@ -38,26 +38,26 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-postgres-secret
                   key: DATABASE_URL
-            {{- if .Values.minio.enabled }}
+            {{- if .Values.seaweedfs.enabled }}
             - name: BLOB_STORE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-minio-secret
+                  name: {{ .Release.Name }}-seaweedfs-secret
                   key: BLOB_STORE_URL
             - name: BLOB_STORE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-minio-secret
+                  name: {{ .Release.Name }}-seaweedfs-secret
                   key: BLOB_STORE_ACCESS_KEY
             - name: BLOB_STORE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-minio-secret
+                  name: {{ .Release.Name }}-seaweedfs-secret
                   key: BLOB_STORE_SECRET_KEY
             - name: BLOB_STORE_BUCKET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-minio-secret
+                  name: {{ .Release.Name }}-seaweedfs-secret
                   key: BLOB_STORE_BUCKET
             {{- end }}
             {{- if and .Values.api.auth.enabled .Values.api.auth.token }}

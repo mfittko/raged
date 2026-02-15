@@ -95,10 +95,10 @@ enrichment:
       anthropicApiKey: ""
       openaiApiKey: ""
 
-# Optional S3-compatible blob storage for large files
-minio:
+# Optional S3-compatible blob storage for large files (SeaweedFS)
+seaweedfs:
   enabled: false
-  image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+  image: chrislusf/seaweedfs:3.80
   accessKey: ""
   secretKey: ""
   bucket: "rag-raw"
@@ -106,5 +106,5 @@ minio:
     size: 20Gi
     storageClassName: ""
   service:
-    apiPort: 9000
-    consolePort: 9001
+    s3Port: 8333
+    masterPort: 9333
