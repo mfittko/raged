@@ -16,9 +16,17 @@ spec:
         app: {{ .Release.Name }}-neo4j
         {{- include "rag.labels" . | nindent 8 }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 7474
+        runAsGroup: 7474
+        fsGroup: 7474
       containers:
         - name: neo4j
           image: {{ .Values.neo4j.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
           ports:
             - { containerPort: 7474, name: http }
             - { containerPort: 7687, name: bolt }

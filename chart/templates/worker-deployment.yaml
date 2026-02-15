@@ -15,10 +15,18 @@ spec:
         app: {{ .Release.Name }}-enrichment-worker
         {{- include "rag.labels" . | nindent 8 }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: worker
           image: "{{ .Values.enrichment.worker.image.repository }}:{{ .Values.enrichment.worker.image.tag }}"
           imagePullPolicy: {{ .Values.enrichment.worker.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
           envFrom:
             - configMapRef: { name: {{ .Release.Name }}-worker-config }
             {{- if or .Values.enrichment.worker.extractor.anthropicApiKey .Values.enrichment.worker.extractor.openaiApiKey }}
@@ -35,6 +43,14 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-neo4j-secret
                   key: NEO4J_AUTH
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import sys; sys.exit(0)"
+            initialDelaySeconds: 30
+            periodSeconds: 30
           {{- if .Values.enrichment.worker.resources }}
           resources: {{- toYaml .Values.enrichment.worker.resources | nindent 12 }}
           {{- end }}

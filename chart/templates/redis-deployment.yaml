@@ -15,9 +15,17 @@ spec:
         app: {{ .Release.Name }}-redis
         {{- include "rag.labels" . | nindent 8 }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
       containers:
         - name: redis
           image: {{ .Values.redis.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
           command: ["redis-server", "--appendonly", "yes"]
           ports: [{ containerPort: 6379 }]
           volumeMounts: [{ name: data, mountPath: /data }]

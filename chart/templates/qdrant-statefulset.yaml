@@ -15,9 +15,17 @@ spec:
         app: {{ .Release.Name }}-qdrant
         {{- include "rag.labels" . | nindent 8 }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: qdrant
           image: {{ .Values.qdrant.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
           ports: [{ containerPort: 6333 }]
           volumeMounts: [{ name: data, mountPath: /qdrant/storage }]
   volumeClaimTemplates:
