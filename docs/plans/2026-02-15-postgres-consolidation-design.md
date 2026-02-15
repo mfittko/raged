@@ -274,7 +274,8 @@ WITH next AS (
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
-UPDATE task_queue SET status = 'processing', started_at = now()
+UPDATE task_queue SET status = 'processing', started_at = now(),
+    lease_expires_at = now() + interval '5 minutes', leased_by = $worker_id
 FROM next WHERE task_queue.id = next.id
 RETURNING *;
 ```
