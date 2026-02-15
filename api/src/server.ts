@@ -1,4 +1,6 @@
 import Fastify from "fastify";
+import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import { ensureCollection, qdrant, collectionName, getPointsByBaseId, scrollPoints, scrollPointsPage, getPointsByIds } from "./qdrant.js";
 import { embed } from "./ollama.js";
 import { registerAuth } from "./auth.js";
@@ -17,6 +19,20 @@ import { isGraphEnabled, expandEntities, getEntity, getDocumentsByEntityMention 
 export function buildApp() {
   const app = Fastify({ logger: true });
   registerErrorHandler(app);
+  
+  // Register CORS with env-configurable origin
+  const corsOrigin = process.env.CORS_ORIGIN || "*";
+  app.register(cors, {
+    origin: corsOrigin,
+  });
+
+  // Register rate limiting with env-configurable max
+  const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX || "100", 10);
+  app.register(rateLimit, {
+    max: rateLimitMax,
+    timeWindow: "1 minute",
+  });
+
   registerAuth(app);
 
   app.get("/healthz", async () => ({ ok: true }));
