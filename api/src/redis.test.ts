@@ -26,6 +26,7 @@ describe("redis module", () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.resetModules();
     process.env = { ...originalEnv };
   });
