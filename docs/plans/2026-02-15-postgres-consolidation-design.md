@@ -6,6 +6,7 @@ Replace Qdrant (vector DB), Neo4j (graph DB), and Redis (task queue) with a sing
 
 This is a clean break — old storage code is deleted, not abstracted behind adapters.
 Existing Qdrant/Neo4j/Redis data is not migrated in-place; this plan assumes re-indexing into Postgres from source repositories.
+This project is currently greenfield and not yet deployed, so no backward-compatibility rollout is required.
 
 ## System context
 
@@ -69,6 +70,7 @@ BLOB_STORE_URL=http://localhost:9000
 BLOB_STORE_ACCESS_KEY=minioadmin
 BLOB_STORE_SECRET_KEY=minioadmin
 BLOB_STORE_BUCKET=rag-raw
+BLOB_STORE_THRESHOLD_BYTES=10485760
 ```
 
 ---
@@ -83,9 +85,12 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- Documents (new first-class concept, currently implicit via baseId)
 CREATE TABLE documents (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- Legacy identifier kept for compatibility with /enrichment/:baseId lookups
+    base_id       TEXT UNIQUE,
     -- Natural identity key for idempotent re-ingest (derived from canonical source path/URL)
     identity_key  TEXT NOT NULL,
     source        TEXT NOT NULL,
+    -- Canonical source URL; ingest maps item.url -> documents.item_url
     item_url      TEXT,
     doc_type      TEXT,
     collection    TEXT NOT NULL DEFAULT 'docs',
@@ -95,7 +100,9 @@ CREATE TABLE documents (
     lang          TEXT,
     title         TEXT,
     summary       TEXT,
+    metadata      JSONB,
     raw_key       TEXT,
+    -- Raw object size in bytes when a blob is stored
     raw_bytes     BIGINT,
     mime_type     TEXT,
     created_at    TIMESTAMPTZ DEFAULT now(),
@@ -136,6 +143,13 @@ CREATE TABLE chunks (
     -- 768 matches the default embedding model in this project (nomic-embed-text).
     -- If model dimension changes, alter this column and rebuild vector indexes.
     embedding           vector(768),
+    -- Denormalized filter fields for fast filtered vector search
+    repo_id             TEXT,
+    repo_url            TEXT,
+    path                TEXT,
+    lang                TEXT,
+    doc_type            TEXT,
+    item_url            TEXT,
     enrichment_status   TEXT NOT NULL DEFAULT 'none'
                         CHECK (enrichment_status IN ('none','pending','processing','enriched','failed')),
     tier1_meta          JSONB,
@@ -150,6 +164,10 @@ CREATE INDEX idx_chunks_embedding ON chunks
     USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX idx_chunks_document_id ON chunks (document_id);
 CREATE INDEX idx_chunks_enrichment_status ON chunks (enrichment_status);
+CREATE INDEX idx_chunks_repo_id ON chunks (repo_id);
+CREATE INDEX idx_chunks_path ON chunks (path);
+CREATE INDEX idx_chunks_lang ON chunks (lang);
+CREATE INDEX idx_chunks_doc_type ON chunks (doc_type);
 
 -- Entities (replaces Neo4j Entity nodes)
 CREATE TABLE entities (
@@ -173,6 +191,7 @@ CREATE TABLE entity_relationships (
 );
 
 -- Document-entity mentions (replaces Neo4j MENTIONS edges)
+-- document_id references documents.id (UUID), not the legacy base_id string.
 CREATE TABLE document_entity_mentions (
     document_id     UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     entity_id       UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
@@ -187,11 +206,13 @@ CREATE INDEX idx_mentions_entity_id ON document_entity_mentions (entity_id);
 CREATE TABLE task_queue (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     queue           TEXT NOT NULL DEFAULT 'enrichment',
+    -- dead status replaces Redis dead-letter queue as an in-table terminal state
     status          TEXT NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending','processing','completed','failed','dead')),
     payload         JSONB NOT NULL,
     attempt         INT DEFAULT 1,
     max_attempts    INT DEFAULT 3,
+    -- run_after is the SQL equivalent of retryAfter in the current worker payload model
     run_after       TIMESTAMPTZ DEFAULT now(),
     started_at      TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ,
@@ -210,14 +231,21 @@ CREATE INDEX idx_task_queue_dequeue
 |---------|----------|
 | document upsert | `INSERT INTO documents ... ON CONFLICT (collection, identity_key) DO UPDATE SET ...` |
 | `qdrant.upsert(points)` | `INSERT INTO chunks ... ON CONFLICT (document_id, chunk_index) DO UPDATE` |
-| `qdrant.search(vector, limit, filter)` | `SELECT ... ORDER BY embedding <=> $1 LIMIT $n` |
-| `qdrant.scroll(filter)` | `SELECT ... WHERE ... LIMIT $n OFFSET $o` |
+| `qdrant.search(vector, limit, filter)` | `SELECT ... FROM chunks WHERE <translated filter> ORDER BY embedding <=> $1 LIMIT $n` |
+| `qdrant.scroll(filter)` | `SELECT ... WHERE <translated filter> LIMIT $n OFFSET $o` |
 | `qdrant.set_payload()` | `UPDATE chunks SET tier2_meta = $1 WHERE id = $2` |
 | Neo4j `MERGE Entity` | `INSERT INTO entities ... ON CONFLICT (name) DO UPDATE` |
 | Neo4j graph traversal (1-2 hops) | JOIN or recursive CTE |
 | Redis `LPUSH` (enqueue) | `INSERT INTO task_queue` |
 | Redis `BRPOP` (dequeue) | `FOR UPDATE SKIP LOCKED` (polled) |
 | Redis `LLEN` | `SELECT count(*) FROM task_queue WHERE status = 'pending'` |
+
+Filter translation notes used by query/scroll:
+
+- `repoId = X` -> `chunks.repo_id = $1`
+- `lang = X` -> `chunks.lang = $1`
+- `path prefix = P` -> `chunks.path LIKE ($1 || '%')`
+- `enrichmentStatus = X` -> `chunks.enrichment_status = $1`
 
 ### Worker dequeue pattern
 
@@ -233,6 +261,15 @@ UPDATE task_queue SET status = 'processing', started_at = now()
 FROM next WHERE task_queue.id = next.id
 RETURNING *;
 ```
+
+Worker behavior: if this returns zero rows, the worker loop immediately retries; this is expected under SKIP LOCKED contention.
+
+### Blob storage behavior
+
+- Files with size `<= BLOB_STORE_THRESHOLD_BYTES` stay in Postgres-only flow.
+- Files with size `> BLOB_STORE_THRESHOLD_BYTES` store raw content in MinIO with key `documents/{documents.id}/raw` (or extension variant) and persist key/size in `documents.raw_key` and `documents.raw_bytes`.
+- Deleting a document must first delete its blob object (if present), then delete the `documents` row.
+- A periodic orphan cleanup job can remove MinIO objects with no matching `documents.raw_key`.
 
 ---
 
@@ -280,7 +317,7 @@ RETURNING *;
 
 | Component | Remove | Add |
 |-----------|--------|-----|
-| API (npm) | `@qdrant/js-client-rest`, `redis`, `neo4j-driver` | `pg`, `pgvector` (Node adapter package) |
+| API (npm) | `@qdrant/js-client-rest`, `redis`, `neo4j-driver` | `pg` |
 | Worker (pip) | `qdrant-client`, `redis`, `neo4j` | `asyncpg`, `pgvector` (PyPI package) |
 
 ### Affected GitHub issues
