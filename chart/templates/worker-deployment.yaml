@@ -68,47 +68,40 @@ spec:
                       except Exception:
                           return False
 
-                  def parse_url(url_str):
-                      """Extract host and port from URL"""
-                      if not url_str:
-                          return None, None
-                      try:
-                          parsed = urlparse(url_str)
-                          host = parsed.hostname
-                          port = parsed.port
-                          # Default ports if not specified
-                          if port is None:
-                              if parsed.scheme == 'redis':
-                                  port = 6379
-                              elif parsed.scheme in ('bolt', 'neo4j'):
-                                  port = 7687
-                              elif parsed.scheme == 'http':
-                                  port = 6333
-                          return host, port
-                      except Exception:
-                          return None, None
+                  def host_port_from_url(url, default_host, default_port):
+                      if not url:
+                          return default_host, default_port
+                      parsed = urlparse(url)
+                      host = parsed.hostname or default_host
+                      port = parsed.port or default_port
+                      return host, str(port)
 
                   # Build checks list based on configured services
                   checks = []
-                  
-                  # Redis is required when enrichment is enabled
-                  {{- if .Values.enrichment.enabled }}
-                  redis_host, redis_port = parse_url(os.getenv("REDIS_URL", ""))
-                  if redis_host and redis_port:
-                      checks.append(("REDIS", redis_host, str(redis_port)))
-                  {{- end }}
-                  
-                  # Neo4j is only required when explicitly enabled
+                  redis_host, redis_port = host_port_from_url(
+                      os.getenv("REDIS_URL"),
+                      "{{ .Release.Name }}-redis",
+                      6379,
+                  )
+                  checks.append(("REDIS", redis_host, redis_port))
+
+                  # Neo4j is optional - only check when explicitly enabled
                   {{- if .Values.neo4j.enabled }}
-                  neo4j_host, neo4j_port = parse_url(os.getenv("NEO4J_URL", ""))
-                  if neo4j_host and neo4j_port:
-                      checks.append(("NEO4J", neo4j_host, str(neo4j_port)))
+                  neo4j_host, neo4j_port = host_port_from_url(
+                      os.getenv("NEO4J_URL"),
+                      "{{ .Release.Name }}-neo4j",
+                      7687,
+                  )
+                  checks.append(("NEO4J", neo4j_host, neo4j_port))
                   {{- end }}
-                  
-                  # Qdrant is always required
-                  qdrant_host, qdrant_port = parse_url(os.getenv("QDRANT_URL", ""))
-                  if qdrant_host and qdrant_port:
-                      checks.append(("QDRANT", qdrant_host, str(qdrant_port)))
+
+                  # Qdrant is required
+                  qdrant_host, qdrant_port = host_port_from_url(
+                      os.getenv("QDRANT_URL"),
+                      "{{ .Release.Name }}-qdrant",
+                      6333,
+                  )
+                  checks.append(("QDRANT", qdrant_host, qdrant_port))
 
                   healthy = True
                   for name, host, port in checks:
