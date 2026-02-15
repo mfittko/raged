@@ -47,7 +47,9 @@ async def process_task(task: dict) -> None:
 
         # Tier 3: LLM extraction (document-level - only on last chunk)
         if chunk_index == total_chunks - 1:
-            await run_document_level_extraction(document_id, base_id, doc_type, total_chunks, source)
+            await run_document_level_extraction(
+                document_id, base_id, doc_type, total_chunks, source
+            )
 
         # Mark chunk as enriched (tier3 update does this, but tier2-only chunks need it)
         if chunk_index != total_chunks - 1:

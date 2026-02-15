@@ -1,6 +1,6 @@
 """Tests for the enrichment pipeline."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -150,10 +150,7 @@ async def test_aggregate_chunks():
 @pytest.mark.asyncio
 async def test_process_task_handles_error(mock_task):
     """Test that process_task handles errors gracefully."""
-    with (
-        patch("src.pipeline.db") as mock_db,
-        patch("src.pipeline.adapter") as mock_adapter,
-    ):
+    with patch("src.pipeline.db") as mock_db:
         # Mock db to return document ID
         mock_db.get_document_id_by_base_id = AsyncMock(return_value="doc-uuid-1")
         mock_db.update_chunk_status = AsyncMock()

@@ -199,7 +199,9 @@ async def recover_stale_leases() -> int:
         return count
 
 
-async def update_chunk_status(chunk_id: str, document_id: str, chunk_index: int, status: str) -> None:
+async def update_chunk_status(
+    chunk_id: str, document_id: str, chunk_index: int, status: str
+) -> None:
     """Update enrichment status of a chunk.
     
     Args:
