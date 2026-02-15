@@ -389,13 +389,14 @@ async function cmdIngest(options: any) {
 
 async function cmdEnrich(options: any) {
   const api = options.api || "http://localhost:8080";
+  const apiBase = api.replace(/\/$/, "");
   const token = options.token;
   const collection = options.collection || "docs";
   const force = Boolean(options.force);
   const statsOnly = Boolean(options.statsOnly);
 
   // Always show stats first (explicit behavior)
-  const res = await fetch(`${api.replace(/\/$/, "")}/enrichment/stats`, {
+  const res = await fetch(`${apiBase}/enrichment/stats`, {
     method: "GET",
     headers: authHeaders(token),
   });
@@ -425,7 +426,7 @@ async function cmdEnrich(options: any) {
   }
 
   // Enqueue enrichment tasks
-  const enqueueRes = await fetch(`${api.replace(/\/$/, "")}/enrichment/enqueue`, {
+  const enqueueRes = await fetch(`${apiBase}/enrichment/enqueue`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({ collection, force }),
