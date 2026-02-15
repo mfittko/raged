@@ -21,7 +21,8 @@ export function buildApp() {
   registerErrorHandler(app);
   
   // Register CORS with env-configurable origin
-  const corsOrigin = process.env.CORS_ORIGIN || "*";
+  // Default to false (disabled) for security - must be explicitly configured in production
+  const corsOrigin = process.env.CORS_ORIGIN || false;
   app.register(cors, {
     origin: corsOrigin,
   });

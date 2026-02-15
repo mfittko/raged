@@ -403,7 +403,7 @@ describe("API integration tests", () => {
       }
     });
 
-    it("allows requests with default CORS origin", async () => {
+    it("blocks CORS requests by default when CORS_ORIGIN is not set", async () => {
       const { buildApp } = await import("./server.js");
       const app = buildApp();
 
@@ -414,7 +414,8 @@ describe("API integration tests", () => {
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.headers["access-control-allow-origin"]).toBeDefined();
+      // CORS should be disabled by default (no access-control-allow-origin header)
+      expect(res.headers["access-control-allow-origin"]).toBeUndefined();
       await app.close();
     });
 
