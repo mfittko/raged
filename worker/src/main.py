@@ -1,42 +1,27 @@
 import asyncio
-import json
 import logging
+import os
 import time
 
-import redis.asyncio as aioredis
-
-from src.config import (
-    DEAD_LETTER_QUEUE,
-    MAX_RETRIES,
-    QUEUE_NAME,
-    REDIS_URL,
-    WORKER_CONCURRENCY,
-)
+from src import db
+from src.config import MAX_RETRIES, QUEUE_NAME, WORKER_CONCURRENCY
 from src.pipeline import process_task
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 
+# Generate unique worker ID
+WORKER_ID = os.environ.get("HOSTNAME", f"worker-{os.getpid()}")
 
-async def process_task_with_retry(redis_client: aioredis.Redis, task: dict) -> None:
+
+async def process_task_with_retry(task: dict) -> None:
     """Process a task with retry logic and dead-letter handling.
 
     Args:
-        redis_client: Redis client
-        task: Task dictionary
+        task: Task dictionary from database
     """
     task_id = task.get("taskId", "unknown")
     attempt = task.get("attempt", 1)
-
-    # Check if task should be delayed for retry backoff
-    retry_after = task.get("retryAfter", 0)
-    if retry_after > time.time():
-        delay = retry_after - time.time()
-        logger.info(
-            f"Task {task_id} delayed for {delay:.1f}s (retry backoff); sleeping before processing"
-        )
-        if delay > 0:
-            await asyncio.sleep(delay)
 
     try:
         start_time = time.time()
@@ -46,52 +31,38 @@ async def process_task_with_retry(redis_client: aioredis.Redis, task: dict) -> N
 
         elapsed_ms = int((time.time() - start_time) * 1000)
 
+        # Mark as completed
+        await db.complete_task(task_id)
+
         # Log structured completion event
         logger.info(
-            json.dumps(
-                {
-                    "event": "enrichment_complete",
-                    "taskId": task_id,
-                    "baseId": task.get("baseId"),
-                    "docType": task.get("docType"),
-                    "chunkIndex": task.get("chunkIndex"),
-                    "attempt": attempt,
-                    "elapsed_ms": elapsed_ms,
-                }
-            )
+            f"enrichment_complete taskId={task_id} baseId={task.get('baseId')} "
+            f"docType={task.get('docType')} chunkIndex={task.get('chunkIndex')} "
+            f"attempt={attempt} elapsed_ms={elapsed_ms}"
         )
 
     except Exception as e:
-        logger.error(f"Task {task_id} failed (attempt {attempt}/{MAX_RETRIES}): {e}")
+        error_msg = str(e)
+        logger.error(f"Task {task_id} failed (attempt {attempt}/{MAX_RETRIES}): {error_msg}")
 
-        # Retry logic
-        if attempt < MAX_RETRIES:
-            # Increment attempt and re-queue with exponential backoff
-            task["attempt"] = attempt + 1
-            # Use attempt (not attempt-1) for proper exponential backoff: 2, 4, 8, 16, 32, 60
-            task["retryAfter"] = time.time() + min(2**attempt, 60)
-            await redis_client.rpush(QUEUE_NAME, json.dumps(task))
-            logger.info(f"Re-queued task {task_id} for retry {attempt + 1}")
-        else:
-            # Move to dead-letter queue
-            await redis_client.lpush(DEAD_LETTER_QUEUE, json.dumps(task))
-            logger.error(f"Task {task_id} moved to dead-letter queue after {MAX_RETRIES} attempts")
+        # Fail task - will retry or mark as dead based on attempt count
+        await db.fail_task(task_id, error_msg, attempt, MAX_RETRIES)
 
 
-async def worker_task(redis_client: aioredis.Redis) -> None:
-    """Worker task that processes items from the queue.
-
-    Args:
-        redis_client: Redis client
-    """
+async def worker_task() -> None:
+    """Worker task that processes items from the queue using SKIP LOCKED polling."""
     while True:
         try:
-            # Wait for a task from the queue (blocking)
-            _, raw = await redis_client.brpop(QUEUE_NAME)
-            task = json.loads(raw)
+            # Try to dequeue a task
+            task = await db.dequeue_task(WORKER_ID)
+
+            if task is None:
+                # No tasks available - sleep to avoid busy-looping
+                await asyncio.sleep(1)
+                continue
 
             # Process the task
-            await process_task_with_retry(redis_client, task)
+            await process_task_with_retry(task)
 
         except Exception as e:
             logger.error(f"Error in worker task: {e}", exc_info=True)
@@ -99,34 +70,41 @@ async def worker_task(redis_client: aioredis.Redis) -> None:
             await asyncio.sleep(1)
 
 
-async def worker_loop() -> None:
-    """Main worker loop with multiple concurrent tasks."""
-    redis_client = aioredis.from_url(REDIS_URL)
+async def watchdog_task() -> None:
+    """Watchdog task that recovers stale leases every 60 seconds."""
+    while True:
+        try:
+            await asyncio.sleep(60)
+            await db.recover_stale_leases()
+        except Exception as e:
+            logger.error(f"Error in watchdog task: {e}", exc_info=True)
 
-    logger.info(f"Worker started with concurrency={WORKER_CONCURRENCY}")
+
+async def worker_loop() -> None:
+    """Main worker loop with multiple concurrent tasks and watchdog."""
+    logger.info(f"Worker started with concurrency={WORKER_CONCURRENCY}, id={WORKER_ID}")
     logger.info(f"Listening on queue: {QUEUE_NAME}")
-    logger.info(f"Dead-letter queue: {DEAD_LETTER_QUEUE}")
 
     # Create fixed number of worker tasks for concurrency control
     # Each worker processes one task at a time from the queue
-    workers = [asyncio.create_task(worker_task(redis_client)) for _ in range(WORKER_CONCURRENCY)]
+    workers = [asyncio.create_task(worker_task()) for _ in range(WORKER_CONCURRENCY)]
+
+    # Add watchdog task for stale lease recovery
+    watchdog = asyncio.create_task(watchdog_task())
 
     try:
         # Wait for all workers (they run forever)
-        await asyncio.gather(*workers)
+        await asyncio.gather(*workers, watchdog)
     except KeyboardInterrupt:
         logger.info("Shutting down worker...")
-        # Cancel all worker tasks
+        # Cancel all tasks
         for worker in workers:
             worker.cancel()
+        watchdog.cancel()
         # Wait for cancellation to complete
-        await asyncio.gather(*workers, return_exceptions=True)
+        await asyncio.gather(*workers, watchdog, return_exceptions=True)
     finally:
-        await redis_client.close()
-        # Close Neo4j driver
-        from src import graph
-
-        await graph.close_driver()
+        await db.close_pool()
 
 
 def main():
