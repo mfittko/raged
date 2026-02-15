@@ -59,25 +59,23 @@ function ipv4ToOctets(ip: string): number[] {
   return octets;
 }
 
+function ipv4OctetsToInt(octets: number[]): number {
+  // Convert 4 octets to a single 32-bit integer for easy comparison
+  return (
+    ((octets[0] & 0xff) << 24) |
+    ((octets[1] & 0xff) << 16) |
+    ((octets[2] & 0xff) << 8) |
+    (octets[3] & 0xff)
+  ) >>> 0; // Unsigned right shift to ensure positive number
+}
+
 function isIpv4InRange(ip: string, range: { start: number[]; end: number[] }): boolean {
   const octets = ipv4ToOctets(ip);
+  const ipInt = ipv4OctetsToInt(octets);
+  const startInt = ipv4OctetsToInt(range.start);
+  const endInt = ipv4OctetsToInt(range.end);
   
-  // Compare octets from most significant to least significant
-  for (let i = 0; i < 4; i++) {
-    if (octets[i] < range.start[i]) return false;
-    if (octets[i] > range.end[i]) return false;
-    
-    // If this octet is within the range bounds but not equal to either bound,
-    // then all remaining octets are automatically within range
-    if (octets[i] > range.start[i] && octets[i] < range.end[i]) return true;
-    
-    // If this octet equals the start, we need to check the next octet
-    // If this octet equals the end, we need to check the next octet
-    // Continue to next iteration
-  }
-  
-  // All octets matched exactly
-  return true;
+  return ipInt >= startInt && ipInt <= endInt;
 }
 
 function isPrivateIpv4(ip: string): boolean {
@@ -172,12 +170,15 @@ export async function validateUrl(url: string): Promise<{ hostname: string; reso
   // For IPv6 addresses, the hostname will have brackets which we need to strip for validation
   let ipToValidate = hostname;
   
-  // Check if it's an IPv4 address
-  const isIpv4 = hostname.match(/^\d+\.\d+\.\d+\.\d+$/);
+  // Check if it's an IPv4 address (strict format check)
+  const isIpv4 = /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
   
-  // Check if it's an IPv6 address (will be in brackets in URL)
-  // Note: parsed.hostname strips brackets, but we need to check if it's IPv6
-  const isIpv6 = hostname.includes(":");
+  // Check if it's an IPv6 address with more robust validation
+  // IPv6 addresses contain colons and valid hex characters
+  // Must not be a port number (which would be after a single colon at the end)
+  const isIpv6 = hostname.includes(":") && 
+                 /^[0-9a-fA-F:]+$/.test(hostname) &&
+                 hostname.split(":").length > 2; // IPv6 has multiple colons
   
   if (isIpv4 || isIpv6) {
     if (isPrivateIp(ipToValidate)) {
