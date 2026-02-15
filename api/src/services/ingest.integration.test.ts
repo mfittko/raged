@@ -30,6 +30,19 @@ import { extractContentAsync } from "./url-extract.js";
 const mockFetchUrls = vi.mocked(fetchUrls);
 const mockExtractContentAsync = vi.mocked(extractContentAsync);
 
+function createUpsertMock() {
+  return vi.fn<IngestDeps["upsert"]>(async () => {});
+}
+
+function getUpsertedPoints(upsertMock: ReturnType<typeof createUpsertMock>): QdrantPoint[] {
+  expect(upsertMock).toHaveBeenCalled();
+  const firstCall = upsertMock.mock.calls[0];
+  if (!firstCall) {
+    throw new Error("Expected upsert to be called at least once");
+  }
+  return firstCall[1];
+}
+
 function buildIntegrationTestApp(options?: {
   ingestDeps?: Partial<IngestDeps>;
 }) {
@@ -109,7 +122,7 @@ describe("ingest integration tests", () => {
         contentType: "text/html",
       });
 
-      const upsertMock = vi.fn(async () => {});
+      const upsertMock = createUpsertMock();
       const { app } = buildIntegrationTestApp({
         ingestDeps: { upsert: upsertMock },
       });
@@ -129,8 +142,7 @@ describe("ingest integration tests", () => {
       expect(body.fetched).toBe(1);
 
       // Verify fetch metadata in upserted point
-      expect(upsertMock).toHaveBeenCalled();
-      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
+      const points = getUpsertedPoints(upsertMock);
       expect(points[0].payload.text).toBe("Article content here");
       expect(points[0].payload.fetchedUrl).toBe("https://example.com/article");
       expect(points[0].payload.resolvedUrl).toBe("https://example.com/article");
@@ -166,10 +178,9 @@ describe("ingest integration tests", () => {
         text: "PDF text content extracted",
         strategy: "pdf-parse",
         contentType: "application/pdf",
-        metadata: { pageCount: 5 },
       });
 
-      const upsertMock = vi.fn(async () => {});
+      const upsertMock = createUpsertMock();
       const { app } = buildIntegrationTestApp({
         ingestDeps: { upsert: upsertMock },
       });
@@ -188,7 +199,7 @@ describe("ingest integration tests", () => {
       expect(body.upserted).toBe(1);
       expect(body.fetched).toBe(1);
 
-      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
+      const points = getUpsertedPoints(upsertMock);
       expect(points[0].payload.text).toBe("PDF text content extracted");
       expect(points[0].payload.extractionStrategy).toBe("pdf-parse");
 
@@ -220,7 +231,7 @@ describe("ingest integration tests", () => {
         contentType: "text/plain",
       });
 
-      const upsertMock = vi.fn(async () => {});
+      const upsertMock = createUpsertMock();
       const { app } = buildIntegrationTestApp({
         ingestDeps: { upsert: upsertMock },
       });
@@ -238,7 +249,7 @@ describe("ingest integration tests", () => {
       expect(body.ok).toBe(true);
       expect(body.upserted).toBe(1);
 
-      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
+      const points = getUpsertedPoints(upsertMock);
       expect(points[0].payload.text).toBe("Plain text content");
       expect(points[0].payload.extractionStrategy).toBe("passthrough");
 
@@ -267,11 +278,11 @@ describe("ingest integration tests", () => {
 
       mockExtractContentAsync.mockResolvedValue({
         text: JSON.stringify(jsonData, null, 2),
-        strategy: "json-pretty",
+        strategy: "passthrough",
         contentType: "application/json",
       });
 
-      const upsertMock = vi.fn(async () => {});
+      const upsertMock = createUpsertMock();
       const { app } = buildIntegrationTestApp({
         ingestDeps: { upsert: upsertMock },
       });
@@ -289,9 +300,9 @@ describe("ingest integration tests", () => {
       expect(body.ok).toBe(true);
       expect(body.upserted).toBe(1);
 
-      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
+      const points = getUpsertedPoints(upsertMock);
       expect(points[0].payload.text).toBe(JSON.stringify(jsonData, null, 2));
-      expect(points[0].payload.extractionStrategy).toBe("json-pretty");
+      expect(points[0].payload.extractionStrategy).toBe("passthrough");
 
       await app.close();
     });
@@ -340,7 +351,7 @@ describe("ingest integration tests", () => {
           contentType: "text/plain",
         });
 
-      const upsertMock = vi.fn(async () => {});
+      const upsertMock = createUpsertMock();
       const { app } = buildIntegrationTestApp({
         ingestDeps: { upsert: upsertMock },
       });
@@ -644,7 +655,7 @@ describe("ingest integration tests", () => {
       expect(body.fetched).toBeUndefined();
       expect(body.errors).toBeUndefined();
 
-      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
+      const points = getUpsertedPoints(upsertMock);
       expect(points[0].payload.text).toBe("hello world");
       expect(points[0].payload.source).toBe("test.txt");
       expect(points[0].payload.fetchedUrl).toBeUndefined();
@@ -655,7 +666,7 @@ describe("ingest integration tests", () => {
     it("item with both text and url → text used, url stored in metadata, no fetch", async () => {
       mockFetchUrls.mockClear();
 
-      const upsertMock = vi.fn(async () => {});
+      const upsertMock = createUpsertMock();
       const { app } = buildIntegrationTestApp({
         ingestDeps: { upsert: upsertMock },
       });
@@ -684,7 +695,7 @@ describe("ingest integration tests", () => {
       expect(mockFetchUrls).not.toHaveBeenCalled();
 
       // Verify text was used and url stored in metadata
-      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
+      const points = getUpsertedPoints(upsertMock);
       expect(points[0].payload.text).toBe("Provided text content");
       expect(points[0].payload.source).toBe("my-source");
       expect(points[0].payload.itemUrl).toBe("https://example.com/doc");
@@ -721,7 +732,7 @@ describe("ingest integration tests", () => {
         contentType: "text/html",
       });
 
-      const upsertMock = vi.fn(async () => {});
+      const upsertMock = createUpsertMock();
       const { app } = buildIntegrationTestApp({
         ingestDeps: { upsert: upsertMock },
       });
@@ -736,7 +747,7 @@ describe("ingest integration tests", () => {
 
       expect(res.statusCode).toBe(200);
 
-      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
+      const points = getUpsertedPoints(upsertMock);
       const payload = points[0].payload;
 
       // Verify all required fetch metadata fields
@@ -776,7 +787,7 @@ describe("ingest integration tests", () => {
         contentType: "text/html",
       });
 
-      const upsertMock = vi.fn(async () => {});
+      const upsertMock = createUpsertMock();
       const { app } = buildIntegrationTestApp({
         ingestDeps: { upsert: upsertMock },
       });
@@ -791,7 +802,7 @@ describe("ingest integration tests", () => {
 
       expect(res.statusCode).toBe(200);
 
-      const points = upsertMock.mock.calls[0][1] as QdrantPoint[];
+      const points = getUpsertedPoints(upsertMock);
       const payload = points[0].payload;
 
       // Verify redirect chain is captured
