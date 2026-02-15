@@ -71,9 +71,8 @@ services:
       MINIO_BUCKET: "${BLOB_STORE_BUCKET:-rag-raw}"
     entrypoint: >
       /bin/sh -c "
-      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
-      mc mb myminio/$${MINIO_BUCKET} --ignore-existing;
-      exit 0;
+      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb myminio/$${MINIO_BUCKET} --ignore-existing
       "
     profiles: ["storage"]
 
