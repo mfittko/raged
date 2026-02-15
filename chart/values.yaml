@@ -98,9 +98,9 @@ enrichment:
 # Optional S3-compatible blob storage for large files
 minio:
   enabled: false
-  image: minio/minio:latest
-  accessKey: "minioadmin"
-  secretKey: "minioadmin"
+  image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+  accessKey: ""
+  secretKey: ""
   bucket: "rag-raw"
   storage:
     size: 20Gi
