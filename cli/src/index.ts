@@ -333,9 +333,8 @@ async function cmdIngest(options: any) {
   // Handle URL ingestion
   if (url) {
     console.log(`Fetching ${url} ...`);
-    const item: IngestItem = { url };
+    const item: IngestItem = { url, enrich };
     if (docTypeOverride) item.docType = docTypeOverride;
-    if (enrich !== undefined) item.enrich = enrich;
 
     try {
       const result = await ingest(api, collection, [item], token);
