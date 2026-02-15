@@ -168,7 +168,7 @@ async def test_process_task_handles_error(mock_task):
         failed_calls = [
             call
             for call in mock_db.update_chunk_status.call_args_list
-            if len(call[0]) >= 4 and call[0][3] == "failed"
+            if len(call[0]) >= 3 and call[0][2] == "failed"
         ]
 
         # Should have at least one failed status update
@@ -205,6 +205,33 @@ async def test_run_document_level_extraction():
         assert mock_db.update_document_summary.called
         assert mock_db.upsert_entity.called
         assert mock_db.add_document_mention.called
+
+
+@pytest.mark.asyncio
+async def test_run_document_level_extraction_raises_on_chunk_update_failure():
+    """Test document-level extraction fails when any tier-3 chunk update fails."""
+    with (
+        patch("src.pipeline.db") as mock_db,
+        patch("src.pipeline.adapter") as mock_adapter,
+    ):
+        mock_db.get_chunks_text = AsyncMock(return_value=["chunk-0", "chunk-1"])
+        mock_db.update_chunk_tier3 = AsyncMock(side_effect=[None, RuntimeError("boom")])
+        mock_db.update_chunk_status = AsyncMock()
+
+        mock_adapter.extract_metadata = AsyncMock(return_value={"summary": "Test"})
+        mock_adapter.extract_entities = AsyncMock(
+            return_value={"entities": [], "relationships": []}
+        )
+
+        with pytest.raises(RuntimeError, match="Tier-3 update failed"):
+            await run_document_level_extraction("doc-uuid-1", "base-id", "code", 2, "test.py")
+
+        failed_calls = [
+            call
+            for call in mock_db.update_chunk_status.call_args_list
+            if len(call[0]) >= 3 and call[0][2] == "failed"
+        ]
+        assert len(failed_calls) == 1
 
 
 @pytest.mark.asyncio

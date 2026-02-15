@@ -137,7 +137,7 @@ async def fail_task(task_id: str, error_msg: str, attempt: int, max_attempts: in
             UPDATE task_queue
             SET status = 'pending',
                 attempt = $2,
-                run_after = now() + ($3 || ' seconds')::interval,
+                run_after = now() + ($3 * interval '1 second'),
                 lease_expires_at = NULL,
                 leased_by = NULL,
                 error = $4
@@ -199,13 +199,10 @@ async def recover_stale_leases() -> int:
         return count
 
 
-async def update_chunk_status(
-    chunk_id: str, document_id: str, chunk_index: int, status: str
-) -> None:
+async def update_chunk_status(document_id: str, chunk_index: int, status: str) -> None:
     """Update enrichment status of a chunk.
 
     Args:
-        chunk_id: Legacy Qdrant ID (baseId:chunkIndex format)
         document_id: Document UUID
         chunk_index: Chunk index
         status: New status (pending, processing, enriched, failed)
@@ -368,11 +365,10 @@ async def add_entity_relationship(
         rel_type: Relationship type
         description: Relationship description
     """
-    pool = await get_pool()
+    source_id = await get_or_create_entity_id(source_name)
+    target_id = await get_or_create_entity_id(target_name)
 
-    # Get or create both entities first (use 'unknown' for empty type to ensure data quality)
-    source_id = await upsert_entity(source_name, "unknown", "")
-    target_id = await upsert_entity(target_name, "unknown", "")
+    pool = await get_pool()
 
     query = """
         INSERT INTO entity_relationships (source_id, target_id, relationship_type, description)
@@ -383,6 +379,32 @@ async def add_entity_relationship(
 
     async with pool.acquire() as conn:
         await conn.execute(query, source_id, target_id, rel_type, description)
+
+
+async def get_or_create_entity_id(name: str) -> str:
+    """Get an entity ID by name, creating a placeholder when missing.
+
+    Existing entity metadata is preserved and only `last_seen` is updated.
+
+    Args:
+        name: Entity name
+
+    Returns:
+        Entity ID (UUID as string)
+    """
+    pool = await get_pool()
+
+    query = """
+        INSERT INTO entities (name, type, description)
+        VALUES ($1, 'unknown', '')
+        ON CONFLICT (name) DO UPDATE
+        SET last_seen = now()
+        RETURNING id
+    """
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, name)
+        return str(row["id"])
 
 
 async def update_document_summary(document_id: str, summary: str) -> None:

@@ -12,6 +12,7 @@ from src.db import (
     fail_task,
     get_chunks_text,
     get_document_id_by_base_id,
+    get_or_create_entity_id,
     recover_stale_leases,
     update_chunk_status,
     update_chunk_tier2,
@@ -104,6 +105,7 @@ async def test_fail_task_retry(mock_pool):
         call_args = conn.execute.call_args[0]
         assert "pending" in call_args[0]
         assert call_args[2] == 2  # attempt incremented
+        assert "$3 * interval '1 second'" in call_args[0]
 
 
 @pytest.mark.asyncio
@@ -138,7 +140,7 @@ async def test_update_chunk_status(mock_pool):
     pool, conn = mock_pool
 
     with patch("src.db.get_pool", return_value=pool):
-        await update_chunk_status("doc-1:0", "doc-uuid-1", 0, "enriched")
+        await update_chunk_status("doc-uuid-1", 0, "enriched")
 
         assert conn.execute.called
 
@@ -222,10 +224,26 @@ async def test_add_entity_relationship(mock_pool):
     conn.fetchrow.return_value = {"id": "entity-uuid-1"}
 
     with patch("src.db.get_pool", return_value=pool):
-        with patch("src.db.upsert_entity", return_value="entity-uuid-1"):
+        with patch("src.db.get_or_create_entity_id", return_value="entity-uuid-1"):
             await add_entity_relationship("EntityA", "EntityB", "uses", "EntityA uses EntityB")
 
             assert conn.execute.called
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_entity_id(mock_pool):
+    """Test get-or-create entity helper preserves existing metadata semantics."""
+    pool, conn = mock_pool
+    conn.fetchrow.return_value = {"id": "entity-uuid-1"}
+
+    with patch("src.db.get_pool", return_value=pool):
+        entity_id = await get_or_create_entity_id("TestEntity")
+
+        assert entity_id == "entity-uuid-1"
+        assert conn.fetchrow.called
+        call_args = conn.fetchrow.call_args[0]
+        assert "ON CONFLICT (name) DO UPDATE" in call_args[0]
+        assert "SET last_seen = now()" in call_args[0]
 
 
 @pytest.mark.asyncio

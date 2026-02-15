@@ -37,7 +37,7 @@ async def process_task(task: dict) -> None:
 
     try:
         # Update status to processing
-        await db.update_chunk_status(base_id, document_id, chunk_index, "processing")
+        await db.update_chunk_status(document_id, chunk_index, "processing")
 
         # Tier 2: NLP extraction (per-chunk)
         tier2_data = await run_tier2_extraction(text)
@@ -53,13 +53,13 @@ async def process_task(task: dict) -> None:
 
         # Mark chunk as enriched (tier3 update does this, but tier2-only chunks need it)
         if chunk_index != total_chunks - 1:
-            await db.update_chunk_status(base_id, document_id, chunk_index, "enriched")
+            await db.update_chunk_status(document_id, chunk_index, "enriched")
 
         logger.info(f"Successfully processed {base_id}:{chunk_index}")
 
     except Exception as e:
         logger.error(f"Error processing task {base_id}:{chunk_index}: {e}", exc_info=True)
-        await db.update_chunk_status(base_id, document_id, chunk_index, "failed")
+        await db.update_chunk_status(document_id, chunk_index, "failed")
         raise
 
 
@@ -151,12 +151,22 @@ async def run_document_level_extraction(
 
         # Use return_exceptions to handle partial failures gracefully
         update_results = await asyncio.gather(*update_tasks, return_exceptions=True)
+        failed_chunk_indices: list[int] = []
         for idx, result in enumerate(update_results):
             if isinstance(result, Exception):
+                failed_chunk_indices.append(idx)
                 logger.error(
                     f"Tier-3 payload update failed for chunk {base_id}:{idx}: {result}",
                     exc_info=True,
                 )
+
+        if failed_chunk_indices:
+            for idx in failed_chunk_indices:
+                await db.update_chunk_status(document_id, idx, "failed")
+            raise RuntimeError(
+                f"Tier-3 update failed for {len(failed_chunk_indices)} chunk(s): "
+                + ",".join(str(index) for index in failed_chunk_indices)
+            )
 
         # Write entities and relationships to Postgres
         await write_entities_to_db(document_id, base_id, tier3_meta, entity_result)
