@@ -813,4 +813,244 @@ describe("ingest integration tests", () => {
       await app.close();
     });
   });
+
+  describe("additional coverage scenarios", () => {
+    it("Markdown URL → passthrough with correct content type", async () => {
+      mockFetchUrls.mockResolvedValue({
+        results: new Map([
+          [
+            "https://example.com/README.md",
+            {
+              url: "https://example.com/README.md",
+              resolvedUrl: "https://example.com/README.md",
+              contentType: "text/markdown",
+              status: 200,
+              body: Buffer.from("# Markdown Title\n\nSome markdown content here."),
+              fetchedAt: "2024-01-01T00:00:00Z",
+            },
+          ],
+        ]),
+        errors: [],
+      });
+
+      mockExtractContentAsync.mockResolvedValue({
+        text: "# Markdown Title\n\nSome markdown content here.",
+        strategy: "passthrough",
+        contentType: "text/markdown",
+      });
+
+      const upsertMock = createUpsertMock();
+      const { app } = buildIntegrationTestApp({
+        ingestDeps: { upsert: upsertMock },
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ingest",
+        payload: {
+          items: [{ url: "https://example.com/README.md" }],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.upserted).toBe(1);
+      expect(body.fetched).toBe(1);
+
+      const points = getUpsertedPoints(upsertMock);
+      expect(points[0].payload.text).toContain("Markdown Title");
+      expect(points[0].payload.contentType).toBe("text/markdown");
+
+      await app.close();
+    });
+
+    it("50 URLs at once (boundary test) → all processed successfully", async () => {
+      const urlMap = new Map();
+      for (let i = 1; i <= 50; i++) {
+        urlMap.set(
+          `https://example.com/page${i}`,
+          {
+            url: `https://example.com/page${i}`,
+            resolvedUrl: `https://example.com/page${i}`,
+            contentType: "text/plain",
+            status: 200,
+            body: Buffer.from(`Content ${i}`),
+            fetchedAt: "2024-01-01T00:00:00Z",
+          }
+        );
+      }
+
+      mockFetchUrls.mockResolvedValue({
+        results: urlMap,
+        errors: [],
+      });
+
+      mockExtractContentAsync.mockImplementation(async (body) => ({
+        text: body.toString(),
+        strategy: "passthrough",
+        contentType: "text/plain",
+      }));
+
+      const upsertMock = createUpsertMock();
+      const { app } = buildIntegrationTestApp({
+        ingestDeps: { upsert: upsertMock },
+      });
+
+      const items = [];
+      for (let i = 1; i <= 50; i++) {
+        items.push({ url: `https://example.com/page${i}` });
+      }
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ingest",
+        payload: { items },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.upserted).toBe(50);
+      expect(body.fetched).toBe(50);
+      expect(body.errors).toBeUndefined();
+
+      await app.close();
+    });
+
+    it("URL with query parameters and fragment → stripped from source", async () => {
+      const urlWithParams = "https://example.com/article?id=123&lang=en#section-2";
+
+      mockFetchUrls.mockResolvedValue({
+        results: new Map([
+          [
+            urlWithParams,
+            {
+              url: urlWithParams,
+              resolvedUrl: urlWithParams,
+              contentType: "text/html",
+              status: 200,
+              body: Buffer.from("<html><body>Article content</body></html>"),
+              fetchedAt: "2024-01-01T00:00:00Z",
+            },
+          ],
+        ]),
+        errors: [],
+      });
+
+      mockExtractContentAsync.mockResolvedValue({
+        text: "Article content",
+        strategy: "readability",
+        contentType: "text/html",
+      });
+
+      const upsertMock = createUpsertMock();
+      const { app } = buildIntegrationTestApp({
+        ingestDeps: { upsert: upsertMock },
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ingest",
+        payload: {
+          items: [{ url: urlWithParams }],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const points = getUpsertedPoints(upsertMock);
+      
+      // Source strips query params and fragment (origin + pathname only)
+      expect(points[0].payload.source).toBe("https://example.com/article");
+      // But fetchedUrl preserves the full URL
+      expect(points[0].payload.fetchedUrl).toBe(urlWithParams);
+      expect(points[0].payload.resolvedUrl).toBe(urlWithParams);
+
+      await app.close();
+    });
+
+    it("URL ingestion with enrichment enabled → enrichment metadata added", async () => {
+      const { isEnrichmentEnabled } = await import("../redis.js");
+      vi.mocked(isEnrichmentEnabled).mockReturnValue(true);
+
+      mockFetchUrls.mockResolvedValue({
+        results: new Map([
+          [
+            "https://example.com/doc",
+            {
+              url: "https://example.com/doc",
+              resolvedUrl: "https://example.com/doc",
+              contentType: "text/plain",
+              status: 200,
+              body: Buffer.from("Document content for enrichment"),
+              fetchedAt: "2024-01-01T00:00:00Z",
+            },
+          ],
+        ]),
+        errors: [],
+      });
+
+      mockExtractContentAsync.mockResolvedValue({
+        text: "Document content for enrichment",
+        strategy: "passthrough",
+        contentType: "text/plain",
+      });
+
+      const upsertMock = createUpsertMock();
+      const { app } = buildIntegrationTestApp({
+        ingestDeps: { upsert: upsertMock },
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ingest",
+        payload: {
+          items: [{ url: "https://example.com/doc" }],
+          enrich: true,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const points = getUpsertedPoints(upsertMock);
+      expect(points[0].payload.enrichmentStatus).toBe("pending");
+
+      // Restore mock
+      vi.mocked(isEnrichmentEnabled).mockReturnValue(false);
+
+      await app.close();
+    });
+
+    it("network error (connection refused) → error with null status", async () => {
+      mockFetchUrls.mockResolvedValue({
+        results: new Map(),
+        errors: [
+          {
+            url: "https://unreachable.example.com/",
+            status: null,
+            reason: "fetch_failed",
+          },
+        ],
+      });
+
+      const { app } = buildIntegrationTestApp();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ingest",
+        payload: {
+          items: [{ url: "https://unreachable.example.com/" }],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.upserted).toBe(0);
+      expect(body.errors).toHaveLength(1);
+      expect(body.errors[0].status).toBe(null);
+      expect(body.errors[0].reason).toBe("fetch_failed");
+
+      await app.close();
+    });
+  });
 });

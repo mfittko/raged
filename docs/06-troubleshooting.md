@@ -229,3 +229,90 @@ docker stats enrichment-worker
 # or
 kubectl top pods -l app=worker -n rag
 ```
+
+## URL Ingestion Failures
+
+**Cause:** Network issues, SSRF blocks, unsupported content type, or fetch timeout.
+
+**Fix:**
+
+**Check error details in response:**
+```bash
+curl -s -X POST http://localhost:8080/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"items":[{"url":"https://example.com/article"}]}' | jq .
+
+# Response with errors:
+# {
+#   "ok": true,
+#   "upserted": 0,
+#   "errors": [{
+#     "url": "https://example.com/article",
+#     "status": 404,
+#     "reason": "fetch_failed"
+#   }]
+# }
+```
+
+**Common error reasons:**
+
+| Reason | Cause | Fix |
+|--------|-------|-----|
+| `ssrf_blocked` | URL resolves to private IP (10.x.x.x, 192.168.x.x, 127.x.x.x, loopback, link-local) | Use publicly accessible URLs only |
+| `timeout` | URL took too long to respond (>30s) | Check network connectivity, try smaller content |
+| `fetch_failed` | HTTP error from target server (see `status` field for HTTP code) | Verify URL is accessible, check server logs |
+| `too_large` | Response body exceeds 10MB limit | Content is too large for ingestion |
+| `redirect_limit` | Too many redirects (>5) | Check URL for redirect loops |
+| `unsupported_content_type: <type>` | Content type not supported for extraction | Only HTML, PDF, text, markdown, JSON are supported |
+
+**Test URL accessibility manually:**
+```bash
+# Check if URL is reachable
+curl -I https://example.com/article
+
+# Check DNS resolution
+dig +short example.com
+
+# Check for private IPs (will be blocked by SSRF guard)
+dig +short internal-hostname.local
+# → 10.0.0.5 (blocked)
+```
+
+**SSRF protection details:**
+- Blocks RFC 1918 private ranges: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
+- Blocks loopback: `127.0.0.0/8`, `::1`
+- Blocks link-local: `169.254.0.0/16`, `fe80::/10`
+- DNS rebinding defense: resolves hostname before the request and rejects DNS results pointing to private, loopback, or link-local IPs
+- Only HTTP/HTTPS schemes allowed
+
+## Unsupported Content Type
+
+**Cause:** URL returns content type that cannot be extracted (e.g., images, videos, binary files).
+
+**Fix:**
+
+**Supported content types for URL ingestion:**
+- `text/html` — Article extraction via Readability
+- `application/pdf` — Text extraction via pdf-parse
+- `text/plain`, `text/markdown` — Passthrough
+- `application/json` — Pretty-printed JSON
+
+**For unsupported types:** Extract content client-side and send as `text` instead of `url`:
+```bash
+# Instead of:
+curl -X POST http://localhost:8080/ingest -d '{"items":[{"url":"https://example.com/image.png"}]}'
+
+# Do:
+# 1. Download and process the file
+# 2. Send extracted text
+curl -X POST http://localhost:8080/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [{
+      "text": "Extracted or generated text here",
+      "source": "https://example.com/image.png",
+      "docType": "image",
+      "metadata": {"originalUrl": "https://example.com/image.png"}
+    }]
+  }'
+```

@@ -161,4 +161,71 @@ This runs the API directly on your machine while Qdrant and Ollama run in Docker
 cd cli
 npm install
 npm run dev -- index --repo <url> --api http://localhost:8080
+
+# Test URL ingestion
+npm run dev -- ingest --url https://example.com/article --api http://localhost:8080
 ```
+
+## URL Ingestion Examples
+
+The API supports server-side URL fetching for web pages, PDFs, and other content types:
+
+### Via HTTP API
+
+**Ingest a web article:**
+```bash
+curl -s -X POST http://localhost:8080/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [{
+      "url": "https://example.com/article"
+    }]
+  }'
+```
+
+**Ingest a PDF from URL:**
+```bash
+curl -s -X POST http://localhost:8080/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [{
+      "url": "https://example.com/whitepaper.pdf",
+      "source": "Example Whitepaper"
+    }]
+  }'
+```
+
+**Mixed batch (URLs + text):**
+```bash
+curl -s -X POST http://localhost:8080/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"url": "https://example.com/article"},
+      {"text": "Direct text content", "source": "notes/snippet.txt"}
+    ]
+  }'
+```
+
+### Via CLI
+
+```bash
+# Ingest a web page
+node dist/index.js ingest --url https://example.com/article --api http://localhost:8080
+
+# Ingest a PDF
+node dist/index.js ingest --url https://example.com/whitepaper.pdf --api http://localhost:8080
+```
+
+**Supported Content Types:**
+- HTML (Readability article extraction)
+- PDF (pdf-parse text extraction)
+- Plain text, Markdown (passthrough)
+- JSON (pretty-printed)
+
+**SSRF Protection:**
+URL ingestion includes automatic security protections:
+- Blocks private IP ranges (10.x.x.x, 192.168.x.x, 127.x.x.x, etc.)
+- DNS rebinding defense: resolves hostname before request and rejects private IPs
+- Fixed 30-second request timeout
+- Rejects non-HTTP/HTTPS schemes

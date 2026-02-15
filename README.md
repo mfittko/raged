@@ -25,7 +25,7 @@ graph LR
 
 ## What It Does
 
-1. **Ingest** any text — send content to the API via HTTP, or use the CLI to bulk-index Git repositories
+1. **Ingest** text or URLs — send content directly to the API via HTTP, fetch web pages/PDFs server-side, or use the CLI to bulk-index Git repositories
 2. **Embed** each chunk using a local model (Ollama + nomic-embed-text)
 3. **Store** embeddings in Qdrant (vector DB)
 4. **Query** by natural language — semantic similarity search for context-rich results
@@ -51,9 +51,10 @@ curl -s http://localhost:8080/healthz
 
 ## Ingest Content
 
-Via the HTTP API (any text):
+Via the HTTP API (text or URLs):
 
 ```bash
+# Ingest text directly
 curl -s -X POST http://localhost:8080/ingest \
   -H "Content-Type: application/json" \
   -d '{
@@ -61,6 +62,15 @@ curl -s -X POST http://localhost:8080/ingest \
       "id": "my-doc",
       "text": "Your text content here...",
       "source": "notes/meeting.md"
+    }]
+  }'
+
+# Ingest from URL (server-side fetch)
+curl -s -X POST http://localhost:8080/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [{
+      "url": "https://example.com/article"
     }]
   }'
 ```
