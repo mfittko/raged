@@ -153,7 +153,7 @@ export async function validateUrl(url: string): Promise<{ hostname: string; reso
   try {
     parsed = new URL(url);
   } catch {
-    throw new SsrfError(`Invalid URL: ${url}`);
+    throw new SsrfError("Invalid URL format");
   }
   
   // Only allow http and https

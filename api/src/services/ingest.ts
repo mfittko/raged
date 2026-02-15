@@ -47,6 +47,7 @@ function toSourceFromUrl(rawUrl: string): string {
     const urlObj = new URL(rawUrl);
     return `${urlObj.origin}${urlObj.pathname}`;
   } catch {
+    // Invalid URL format, return as-is
     return rawUrl;
   }
 }
