@@ -87,9 +87,8 @@ export function detectDocType(item: IngestItem): DocType {
     if (hostname === "slack.com" || hostname.endsWith(".slack.com")) {
       return "slack";
     }
-  } catch (err) {
+  } catch {
     // Not a valid URL, fall through to other detection methods
-    console.debug("URL parsing failed during doctype detection", err);
   }
 
   // 4. Content sniffing (skip if no text available)
@@ -134,9 +133,8 @@ export function detectDocType(item: IngestItem): DocType {
       if (parsed.messages && Array.isArray(parsed.messages)) {
         return "slack";
       }
-    } catch (err) {
+    } catch {
       // Not valid JSON, continue
-      console.debug("JSON parsing failed during Slack detection", err);
     }
   }
 

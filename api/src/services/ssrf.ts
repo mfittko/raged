@@ -152,9 +152,8 @@ export async function validateUrl(url: string): Promise<{ hostname: string; reso
   let parsed: URL;
   try {
     parsed = new URL(url);
-  } catch (err) {
-    console.debug("URL parsing failed in SSRF validation", err);
-    throw new SsrfError(`Invalid URL: ${url}`);
+  } catch {
+    throw new SsrfError("Invalid URL format");
   }
   
   // Only allow http and https

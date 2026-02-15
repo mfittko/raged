@@ -56,9 +56,8 @@ export function extractSlack(item: IngestItem): SlackMetadata {
         result.timestamp = parsed.messages[0].ts;
       }
     }
-  } catch (err) {
+  } catch {
     // Not JSON, try metadata fallback
-    console.debug("Failed to parse Slack JSON, falling back to metadata", err);
     if (item.metadata?.channel) {
       result.channel = String(item.metadata.channel);
     }
