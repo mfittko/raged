@@ -2,14 +2,14 @@
 
 from abc import ABC, abstractmethod
 from typing import Dict, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ImageDescription(BaseModel):
     """Result of image description extraction."""
 
     description: str
-    detected_objects: List[str] = []
+    detected_objects: List[str] = Field(default_factory=list)
     ocr_text: str = ""
     image_type: str = ""  # photo, diagram, screenshot, chart
 
