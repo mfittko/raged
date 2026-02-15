@@ -110,7 +110,7 @@ services:
       QDRANT_COLLECTION: "docs"
       VECTOR_SIZE: "768"
       DISTANCE: "Cosine"
-      REDIS_URL: "redis://redis:6379"
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379}"
       OLLAMA_URL: "http://ollama:11434"
       EMBED_MODEL: "nomic-embed-text"
       PORT: "8080"
