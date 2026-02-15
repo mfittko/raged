@@ -358,8 +358,36 @@ describe("ingest service", () => {
     expect(points).toBeDefined();
     expect(points[0].payload.text).toBe("Pre-provided text");
     expect(points[0].payload.source).toBe("my-source");
+    expect(points[0].payload.itemUrl).toBe("https://example.com/doc");
 
     // No fetch metadata should be present
+    expect(points[0].payload.fetchedUrl).toBeUndefined();
+  });
+
+  it("auto-sets source from URL when text is provided but source is omitted", async () => {
+    const urlFetch = await import("./url-fetch.js");
+    const mockFetchUrls = (urlFetch as any).__mockFetchUrls;
+
+    const upsertMock = vi.fn(async () => {});
+    const deps = makeDeps({ upsert: upsertMock });
+    const request: IngestRequest = {
+      items: [
+        {
+          url: "https://example.com/doc-without-source?q=1",
+          text: "Provided text without explicit source",
+        },
+      ],
+    };
+
+    await ingest(request, deps);
+
+    expect(mockFetchUrls).not.toHaveBeenCalled();
+
+    const points = (upsertMock.mock.calls[0] as any)[1];
+    expect(points).toBeDefined();
+    expect(points[0].payload.text).toBe("Provided text without explicit source");
+    expect(points[0].payload.source).toBe("https://example.com/doc-without-source");
+    expect(points[0].payload.itemUrl).toBe("https://example.com/doc-without-source?q=1");
     expect(points[0].payload.fetchedUrl).toBeUndefined();
   });
 

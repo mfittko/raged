@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import Fastify from "fastify";
 import { ingestSchema, querySchema } from "./schemas.js";
 import type { IngestRequest } from "./services/ingest.js";
+import { validateIngestRequest } from "./services/ingest-validation.js";
 
 describe("ingest schema validation", () => {
   function buildApp() {
@@ -10,39 +11,9 @@ describe("ingest schema validation", () => {
       schema: ingestSchema,
       preValidation: async (req, reply) => {
         const body = req.body as IngestRequest;
-        
-        // Check that items exists (schema validation should catch this, but be defensive)
-        if (!body.items || !Array.isArray(body.items)) {
-          return;
-        }
-        
-        // Validate each item: must have either text or url (or both)
-        let urlCount = 0;
-        for (const item of body.items) {
-          if (!item.text && !item.url) {
-            return reply.status(400).send({
-              error: "Validation failed: each item must have either 'text' or 'url'"
-            });
-          }
-          
-          // If url is absent, text and source are required
-          if (!item.url && !item.source) {
-            return reply.status(400).send({
-              error: "Validation failed: 'source' is required when 'url' is not provided"
-            });
-          }
-          
-          // Count items with URL
-          if (item.url) {
-            urlCount++;
-          }
-        }
-        
-        // Enforce max 50 URL items per request
-        if (urlCount > 50) {
-          return reply.status(400).send({
-            error: `Validation failed: maximum 50 URL items per request (found ${urlCount})`
-          });
+        const validationError = validateIngestRequest(body);
+        if (validationError) {
+          return reply.status(400).send(validationError);
         }
       }
     }, async () => {

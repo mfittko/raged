@@ -42,6 +42,15 @@ export interface IngestDeps {
   collectionName: (name?: string) => string;
 }
 
+function toSourceFromUrl(rawUrl: string): string {
+  try {
+    const urlObj = new URL(rawUrl);
+    return `${urlObj.origin}${urlObj.pathname}`;
+  } catch {
+    return rawUrl;
+  }
+}
+
 export async function ingest(
   request: IngestRequest,
   deps: IngestDeps,
@@ -109,13 +118,7 @@ export async function ingest(
       // Success: populate text and metadata
       item.text = extraction.text;
       if (!item.source) {
-        // Normalize URL for source
-        try {
-          const urlObj = new URL(fetchResult.resolvedUrl);
-          item.source = `${urlObj.origin}${urlObj.pathname}`;
-        } catch {
-          item.source = fetchResult.resolvedUrl;
-        }
+        item.source = toSourceFromUrl(fetchResult.resolvedUrl);
       }
       
       // Add fetch metadata to item metadata
@@ -149,17 +152,37 @@ export async function ingest(
     metadata?: Record<string, unknown>;
   }
   
-  const processedItems: ProcessedItem[] = textItems.map((item) => {
+  const processedItems: ProcessedItem[] = [];
+  for (const item of textItems) {
+    if (!item.text) {
+      continue;
+    }
+
+    if (!item.source && item.url) {
+      item.source = toSourceFromUrl(item.url);
+    }
+
+    if (!item.source) {
+      continue;
+    }
+
     const docType = detectDocType(item);
-    return {
+    const metadata: Record<string, unknown> = {
+      ...(item.metadata ?? {}),
+    };
+    if (item.url) {
+      metadata.itemUrl = item.url;
+    }
+
+    processedItems.push({
       baseId: item.id ?? randomUUID(),
       docType,
       tier1Meta: extractTier1(item, docType),
-      chunks: chunkText(item.text!),
-      source: item.source!,
-      metadata: item.metadata,
-    };
-  });
+      chunks: chunkText(item.text),
+      source: item.source,
+      metadata,
+    });
+  }
   
   let totalUpserted = 0;
 
