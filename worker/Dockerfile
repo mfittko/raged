@@ -16,10 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Download spaCy English model
 RUN python -m spacy download en_core_web_sm
 
-COPY src/ src/
+COPY --chown=app:app src/ src/
 
-# Set ownership and switch to non-root user
-RUN chown -R app:app /app
+# Switch to non-root user
 USER app
 
 CMD ["python", "-m", "src.main"]

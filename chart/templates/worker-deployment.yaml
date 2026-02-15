@@ -110,6 +110,7 @@ spec:
 
                   sys.exit(0 if healthy else 1)
             initialDelaySeconds: 30
+            timeoutSeconds: 10
             periodSeconds: 30
           {{- if .Values.enrichment.worker.resources }}
           resources: {{- toYaml .Values.enrichment.worker.resources | nindent 12 }}
