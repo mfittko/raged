@@ -1,6 +1,6 @@
 apiVersion: v2
 name: rag-stack
-description: Self-hosted RAG stack (API + Qdrant + Ollama) - MVP (Ingress + token auth + optional indexer Job)
+description: Self-hosted RAG stack (API + Postgres + Ollama) with optional enrichment worker and MinIO blob storage
 type: application
 version: 0.5.0
 appVersion: "0.5.0"

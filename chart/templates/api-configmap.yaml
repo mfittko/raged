@@ -5,11 +5,7 @@ metadata:
   labels:
     {{- include "rag.labels" . | nindent 4 }}
 data:
-  QDRANT_URL: "http://{{ .Release.Name }}-qdrant:{{ .Values.qdrant.service.port }}"
   OLLAMA_URL: "http://{{ .Release.Name }}-ollama:{{ .Values.ollama.service.port }}"
-  QDRANT_COLLECTION: "{{ .Values.api.env.QDRANT_COLLECTION }}"
-  VECTOR_SIZE: "{{ .Values.api.env.VECTOR_SIZE }}"
-  DISTANCE: "{{ .Values.api.env.DISTANCE }}"
   EMBED_MODEL: "{{ .Values.api.env.EMBED_MODEL }}"
   PORT: "8080"
   {{- if .Values.api.env.CORS_ORIGIN }}
@@ -18,6 +14,5 @@ data:
   RATE_LIMIT_MAX: "{{ .Values.api.env.RATE_LIMIT_MAX }}"
   TRUST_PROXY: "{{ .Values.api.env.TRUST_PROXY }}"
   {{- if .Values.enrichment.enabled }}
-  REDIS_URL: "redis://{{ .Release.Name }}-redis:{{ .Values.redis.service.port }}"
   ENRICHMENT_ENABLED: "true"
   {{- end }}

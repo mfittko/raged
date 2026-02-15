@@ -1,0 +1,14 @@
+{{- if .Values.minio.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-minio-data
+  labels:
+    {{- include "rag.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources: { requests: { storage: {{ .Values.minio.storage.size }} } }
+  {{- if .Values.minio.storage.storageClassName }}
+  storageClassName: {{ .Values.minio.storage.storageClassName }}
+  {{- end }}
+{{- end }}

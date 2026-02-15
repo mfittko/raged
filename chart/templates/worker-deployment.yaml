@@ -33,16 +33,33 @@ spec:
             - secretRef: { name: {{ .Release.Name }}-worker-secret }
             {{- end }}
           env:
-            - name: NEO4J_PASSWORD
+            - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-neo4j-secret
-                  key: NEO4J_PASSWORD
-            - name: NEO4J_AUTH
+                  name: {{ .Release.Name }}-postgres-secret
+                  key: DATABASE_URL
+            {{- if .Values.minio.enabled }}
+            - name: BLOB_STORE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-neo4j-secret
-                  key: NEO4J_AUTH
+                  name: {{ .Release.Name }}-minio-secret
+                  key: BLOB_STORE_URL
+            - name: BLOB_STORE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-minio-secret
+                  key: BLOB_STORE_ACCESS_KEY
+            - name: BLOB_STORE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-minio-secret
+                  key: BLOB_STORE_SECRET_KEY
+            - name: BLOB_STORE_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-minio-secret
+                  key: BLOB_STORE_BUCKET
+            {{- end }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -59,7 +76,6 @@ spec:
 
                   def check_tcp(host, port, timeout=2):
                       if not host or not port:
-                          # Fail if configuration is missing
                           return False
                       try:
                           port = int(port)
@@ -76,38 +92,14 @@ spec:
                       port = parsed.port or default_port
                       return host, str(port)
 
-                  # Build checks list based on configured services
-                  checks = []
-                  redis_host, redis_port = host_port_from_url(
-                      os.getenv("REDIS_URL"),
-                      "{{ .Release.Name }}-redis",
-                      6379,
+                  # Check Postgres connection (required)
+                  db_host, db_port = host_port_from_url(
+                      os.getenv("DATABASE_URL"),
+                      "{{ .Release.Name }}-postgres",
+                      5432,
                   )
-                  checks.append(("REDIS", redis_host, redis_port))
 
-                  # Neo4j is optional - only check when explicitly enabled
-                  {{- if .Values.neo4j.enabled }}
-                  neo4j_host, neo4j_port = host_port_from_url(
-                      os.getenv("NEO4J_URL"),
-                      "{{ .Release.Name }}-neo4j",
-                      7687,
-                  )
-                  checks.append(("NEO4J", neo4j_host, neo4j_port))
-                  {{- end }}
-
-                  # Qdrant is required
-                  qdrant_host, qdrant_port = host_port_from_url(
-                      os.getenv("QDRANT_URL"),
-                      "{{ .Release.Name }}-qdrant",
-                      6333,
-                  )
-                  checks.append(("QDRANT", qdrant_host, qdrant_port))
-
-                  healthy = True
-                  for name, host, port in checks:
-                      if not check_tcp(host, port):
-                          healthy = False
-
+                  healthy = check_tcp(db_host, db_port)
                   sys.exit(0 if healthy else 1)
             initialDelaySeconds: 30
             timeoutSeconds: 10

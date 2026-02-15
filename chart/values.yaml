@@ -12,9 +12,6 @@ api:
       cpu: 500m
       memory: 512Mi
   env:
-    QDRANT_COLLECTION: "docs"
-    VECTOR_SIZE: "768"
-    DISTANCE: "Cosine"
     EMBED_MODEL: "nomic-embed-text"
     CORS_ORIGIN: ""
     RATE_LIMIT_MAX: "100"
@@ -53,13 +50,17 @@ indexer:
       cpu: 500m
       memory: 512Mi
 
-qdrant:
-  image: qdrant/qdrant:v1.10.0
+# Postgres 17 with pgvector extension for vector storage, graph data, and task queue
+postgres:
+  image: pgvector/pgvector:17-pg17
+  user: "rag"
+  password: ""
+  database: "ragstack"
   storage:
     size: 20Gi
     storageClassName: ""
   service:
-    port: 6333
+    port: 5432
 
 ollama:
   enabled: true
@@ -94,25 +95,16 @@ enrichment:
       anthropicApiKey: ""
       openaiApiKey: ""
 
-redis:
+# Optional S3-compatible blob storage for large files
+minio:
   enabled: false
-  image: redis:7-alpine
-  storage:
-    size: 5Gi
-    storageClassName: ""
-  service:
-    port: 6379
-
-neo4j:
-  enabled: false
-  image: neo4j:5-community
-  auth:
-    username: "neo4j"
-    password: ""
+  image: minio/minio:latest
+  accessKey: "minioadmin"
+  secretKey: "minioadmin"
+  bucket: "rag-raw"
   storage:
     size: 20Gi
     storageClassName: ""
   service:
-    boltPort: 7687
-    httpPort: 7474
-  plugins: '["apoc"]'
+    apiPort: 9000
+    consolePort: 9001
