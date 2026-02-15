@@ -1,6 +1,6 @@
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
-import pdfParse from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 
 export interface ExtractionResult {
   text: string | null;        // null for unsupported types
@@ -34,8 +34,8 @@ export function extractContent(body: Buffer, contentType: string): ExtractionRes
       
       if (article) {
         return {
-          text: article.textContent,
-          title: article.title,
+          text: article.textContent ?? null,
+          title: article.title ?? undefined,
           strategy: "readability",
           contentType: normalized,
         };
@@ -118,10 +118,11 @@ export async function extractContentAsync(body: Buffer, contentType: string): Pr
   // PDF extraction (async)
   if (normalized === "application/pdf") {
     try {
-      const data = await pdfParse(body);
+      const parser = new PDFParse({ data: body });
+      const result = await parser.getText();
       return {
-        text: data.text,
-        title: data.info?.Title,
+        text: result.text,
+        title: undefined, // Title can be extracted from getInfo() if needed
         strategy: "pdf-parse",
         contentType: normalized,
       };
