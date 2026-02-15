@@ -1,10 +1,12 @@
 """Article/blog post metadata extraction schema."""
+
 from pydantic import BaseModel
 from typing import List
 
 
 class ArticleMetadata(BaseModel):
     """Metadata extracted from articles and blog posts."""
+
     summary: str
     takeaways: List[str] = []
     tags: List[str] = []

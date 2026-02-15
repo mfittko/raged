@@ -89,6 +89,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+          cache-dependency-path: worker/requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run tests
@@ -107,6 +108,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+          cache-dependency-path: worker/requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run ruff check

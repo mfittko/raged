@@ -1,9 +1,11 @@
 """Code document metadata extraction schema."""
+
 from pydantic import BaseModel
 
 
 class CodeMetadata(BaseModel):
     """Metadata extracted from code documents."""
+
     summary: str
     purpose: str
     complexity: str  # low, medium, high

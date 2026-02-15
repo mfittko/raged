@@ -24,4 +24,6 @@ DEAD_LETTER_QUEUE = "enrichment:dead-letter"
 # NEO4J_AUTH=none means auth is disabled
 NEO4J_AUTH = os.environ.get("NEO4J_AUTH", "")
 if NEO4J_AUTH and NEO4J_AUTH != "none" and not NEO4J_PASSWORD:
-    raise RuntimeError("NEO4J_PASSWORD environment variable must be set when Neo4j authentication is enabled")
+    raise RuntimeError(
+        "NEO4J_PASSWORD environment variable must be set when Neo4j authentication is enabled"
+    )

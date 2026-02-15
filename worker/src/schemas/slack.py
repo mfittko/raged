@@ -1,16 +1,19 @@
 """Slack message metadata extraction schema."""
+
 from pydantic import BaseModel
 from typing import List
 
 
 class ActionItem(BaseModel):
     """An action item from a Slack conversation."""
+
     task: str
     assignee: str = ""
 
 
 class SlackMetadata(BaseModel):
     """Metadata extracted from Slack messages."""
+
     summary: str
     decisions: List[str] = []
     action_items: List[ActionItem] = []

@@ -1,16 +1,19 @@
 """Email metadata extraction schema."""
+
 from pydantic import BaseModel
 from typing import List
 
 
 class ActionItem(BaseModel):
     """An action item from an email."""
+
     task: str
     assignee: str = ""
 
 
 class EmailMetadata(BaseModel):
     """Metadata extracted from email messages."""
+
     urgency: str  # low, normal, high, critical
     intent: str  # request, fyi, approval, escalation
     action_items: List[ActionItem] = []

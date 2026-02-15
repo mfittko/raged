@@ -1,10 +1,12 @@
 """Meeting notes metadata extraction schema."""
+
 from pydantic import BaseModel
 from typing import List
 
 
 class ActionItem(BaseModel):
     """An action item from a meeting."""
+
     task: str
     assignee: str = ""
     deadline: str = ""
@@ -12,12 +14,14 @@ class ActionItem(BaseModel):
 
 class TopicSegment(BaseModel):
     """A topic discussed in the meeting."""
+
     topic: str
     summary: str
 
 
 class MeetingMetadata(BaseModel):
     """Metadata extracted from meeting notes."""
+
     decisions: List[str] = []
     action_items: List[ActionItem] = []
     topic_segments: List[TopicSegment] = []

@@ -1,10 +1,12 @@
 """Entity and relationship extraction schema."""
+
 from pydantic import BaseModel
 from typing import List
 
 
 class Entity(BaseModel):
     """An entity extracted from text."""
+
     name: str
     type: str  # person, class, concept, project, org, etc.
     description: str = ""
@@ -12,14 +14,16 @@ class Entity(BaseModel):
 
 class Relationship(BaseModel):
     """A relationship between two entities."""
+
     source: str  # entity name
     target: str  # entity name
-    type: str    # uses, depends-on, discusses, implements, etc.
+    type: str  # uses, depends-on, discusses, implements, etc.
     description: str = ""
 
 
 class EntityExtractionResult(BaseModel):
     """Result of entity and relationship extraction."""
+
     entities: List[Entity] = []
     relationships: List[Relationship] = []
 
