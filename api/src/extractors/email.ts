@@ -15,6 +15,11 @@ export interface EmailMetadata {
 export function extractEmail(item: IngestItem): EmailMetadata {
   const result: EmailMetadata = {};
   const text = item.text;
+  
+  // Early return if no text available
+  if (!text) {
+    return result;
+  }
 
   // Split headers and body at first blank line
   const headerEndIndex = text.indexOf("\n\n");

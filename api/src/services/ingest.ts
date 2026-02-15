@@ -3,6 +3,8 @@ import { chunkText } from "../chunking.js";
 import { detectDocType, type DocType, type IngestItem } from "../doctype.js";
 import { extractTier1 } from "../extractors/index.js";
 import { enqueueEnrichment, isEnrichmentEnabled, type EnrichmentTask } from "../redis.js";
+import { fetchUrls } from "./url-fetch.js";
+import { extractContentAsync } from "./url-extract.js";
 
 export interface IngestRequest {
   collection?: string;
@@ -13,10 +15,16 @@ export interface IngestRequest {
 export interface IngestResult {
   ok: true;
   upserted: number;
+  fetched?: number;
   enrichment?: {
     enqueued: number;
     docTypes: Record<string, number>;
   };
+  errors?: Array<{
+    url: string;
+    status: number | null;
+    reason: string;
+  }>;
 }
 
 export { type IngestItem };
@@ -48,6 +56,89 @@ export async function ingest(
   const EMBED_BATCH_SIZE = 500;
   const now = new Date().toISOString();
   
+  // Pre-process: partition items into text items and URL items
+  const textItems: IngestItem[] = [];
+  const urlItems: IngestItem[] = [];
+  
+  for (const item of request.items) {
+    if (item.url && !item.text) {
+      urlItems.push(item);
+    } else {
+      textItems.push(item);
+    }
+  }
+  
+  // Fetch and extract content from URLs
+  const fetchErrors: Array<{ url: string; status: number | null; reason: string }> = [];
+  let fetchedCount = 0;
+  
+  if (urlItems.length > 0) {
+    const urls = urlItems.map(item => item.url!);
+    const { results, errors } = await fetchUrls(urls);
+    
+    // Convert fetch errors to the result format
+    for (const error of errors) {
+      fetchErrors.push({
+        url: error.url,
+        status: error.status,
+        reason: error.reason,
+      });
+    }
+    
+    // Extract content from successful fetches
+    for (const item of urlItems) {
+      const fetchResult = results.get(item.url!);
+      if (!fetchResult) {
+        // Already in errors
+        continue;
+      }
+      
+      // Extract text from fetched content
+      const extraction = await extractContentAsync(fetchResult.body, fetchResult.contentType);
+      
+      if (extraction.strategy === "metadata-only" || !extraction.text) {
+        // Unsupported content type - add to errors
+        fetchErrors.push({
+          url: item.url!,
+          status: fetchResult.status,
+          reason: `unsupported_content_type: ${fetchResult.contentType}`,
+        });
+        continue;
+      }
+      
+      // Success: populate text and metadata
+      item.text = extraction.text;
+      if (!item.source) {
+        // Normalize URL for source
+        try {
+          const urlObj = new URL(fetchResult.resolvedUrl);
+          item.source = `${urlObj.origin}${urlObj.pathname}`;
+        } catch {
+          item.source = fetchResult.resolvedUrl;
+        }
+      }
+      
+      // Add fetch metadata to item metadata
+      item.metadata = {
+        ...(item.metadata || {}),
+        fetchedUrl: fetchResult.url,
+        resolvedUrl: fetchResult.resolvedUrl,
+        contentType: fetchResult.contentType,
+        fetchStatus: fetchResult.status,
+        fetchedAt: fetchResult.fetchedAt,
+        extractionStrategy: extraction.strategy,
+      };
+      
+      if (extraction.title) {
+        item.metadata.extractedTitle = extraction.title;
+      }
+      
+      // Move to textItems for normal processing
+      textItems.push(item);
+      fetchedCount++;
+    }
+  }
+  
   // Pre-process items to assign stable baseIds and detect metadata
   interface ProcessedItem {
     baseId: string;
@@ -58,14 +149,14 @@ export async function ingest(
     metadata?: Record<string, unknown>;
   }
   
-  const processedItems: ProcessedItem[] = request.items.map((item) => {
+  const processedItems: ProcessedItem[] = textItems.map((item) => {
     const docType = detectDocType(item);
     return {
       baseId: item.id ?? randomUUID(),
       docType,
       tier1Meta: extractTier1(item, docType),
-      chunks: chunkText(item.text),
-      source: item.source,
+      chunks: chunkText(item.text!),
+      source: item.source!,
       metadata: item.metadata,
     };
   });
@@ -138,7 +229,7 @@ export async function ingest(
       await Promise.all(batch.map(task => enqueueEnrichment(task)));
     }
 
-    return {
+    const result: IngestResult = {
       ok: true,
       upserted: totalUpserted,
       enrichment: {
@@ -146,7 +237,30 @@ export async function ingest(
         docTypes: docTypeCounts,
       },
     };
+    
+    if (fetchedCount > 0) {
+      result.fetched = fetchedCount;
+    }
+    
+    if (fetchErrors.length > 0) {
+      result.errors = fetchErrors;
+    }
+    
+    return result;
   }
 
-  return { ok: true, upserted: totalUpserted };
+  const result: IngestResult = { 
+    ok: true, 
+    upserted: totalUpserted 
+  };
+  
+  if (fetchedCount > 0) {
+    result.fetched = fetchedCount;
+  }
+  
+  if (fetchErrors.length > 0) {
+    result.errors = fetchErrors;
+  }
+  
+  return result;
 }

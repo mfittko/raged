@@ -20,7 +20,47 @@ export function buildApp() {
 
   app.get("/healthz", async () => ({ ok: true }));
 
-  app.post("/ingest", { schema: ingestSchema }, async (req) => {
+  app.post("/ingest", { 
+    schema: ingestSchema,
+    preValidation: async (req, reply) => {
+      const body = req.body as IngestRequest;
+      
+      // Validate each item: must have either text or url (or both)
+      let urlCount = 0;
+      for (const item of body.items) {
+        if (!item.text && !item.url) {
+          return reply.status(400).send({
+            error: "Validation failed: each item must have either 'text' or 'url'"
+          });
+        }
+        
+        // If url is absent, text and source are required
+        if (!item.url && !item.text) {
+          return reply.status(400).send({
+            error: "Validation failed: 'text' is required when 'url' is not provided"
+          });
+        }
+        
+        if (!item.url && !item.source) {
+          return reply.status(400).send({
+            error: "Validation failed: 'source' is required when 'url' is not provided"
+          });
+        }
+        
+        // Count items with URL
+        if (item.url) {
+          urlCount++;
+        }
+      }
+      
+      // Enforce max 50 URL items per request
+      if (urlCount > 50) {
+        return reply.status(400).send({
+          error: `Validation failed: maximum 50 URL items per request (found ${urlCount})`
+        });
+      }
+    }
+  }, async (req) => {
     const body = req.body as IngestRequest;
     return ingest(body, {
       embed,

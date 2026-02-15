@@ -11,6 +11,11 @@ export interface ArticleMetadata {
 export function extractArticle(item: IngestItem): ArticleMetadata {
   const result: ArticleMetadata = {};
   const text = item.text;
+  
+  // Early return if no text available
+  if (!text) {
+    return result;
+  }
 
   // Extract Open Graph tags from HTML
   const ogTitle = text.match(
@@ -69,7 +74,7 @@ export function extractArticle(item: IngestItem): ArticleMetadata {
   }
 
   // Use source as URL if it looks like a URL
-  if (item.source.startsWith("http")) {
+  if (item.source?.startsWith("http")) {
     result.url = item.source;
   }
 
