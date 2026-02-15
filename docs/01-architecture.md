@@ -43,7 +43,7 @@ graph TD
 Stateless HTTP service exposing core endpoints:
 
 **Ingestion & Query:**
-- `POST /ingest` — Receives any text items (code, docs, PDFs, images, etc.), runs tier-1 extraction, chunks, embeds via Ollama, upserts vectors into Qdrant, optionally enqueues enrichment
+- `POST /ingest` — Receives text items or URLs (code, docs, PDFs, images, web pages, etc.), optionally fetches URL content server-side with SSRF protection, runs tier-1 extraction, chunks, embeds via Ollama, upserts vectors into Qdrant, optionally enqueues enrichment
 - `POST /query` — Embeds the query text, performs similarity search in Qdrant, optionally expands entities via Neo4j, returns ranked results
 
 **Enrichment:**
@@ -96,12 +96,56 @@ Async background service that:
 5. Upserts entities and relationships to Neo4j
 6. Moves failed tasks to dead-letter queue after max retries
 
+### URL Ingestion Flow
+
+When a `url` field is provided (and `text` is omitted), the API performs server-side content fetching:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as RAG API
+    participant SSRF as SSRF Guard
+    participant Web as External Web
+    participant Extract as Content Extractor
+    participant Embed as Ollama
+    participant QD as Qdrant
+
+    Client->>API: POST /ingest {url}
+    API->>SSRF: Validate URL (no private IPs, DNS rebind check)
+    SSRF-->>API: ✓ Safe
+    API->>Web: Fetch URL content
+    Web-->>API: HTML/PDF/JSON/text
+    API->>Extract: Extract text (Readability/pdf-parse/passthrough)
+    Extract-->>API: Extracted text + metadata
+    API->>API: Chunk text
+    API->>Embed: Embed chunks
+    Embed-->>API: Vectors
+    API->>QD: Upsert with fetch metadata
+    QD-->>API: Success
+    API-->>Client: {ok: true, upserted: N}
+```
+
+**SSRF Protection:**
+- Blocks private IP ranges (RFC 1918, loopback, link-local)
+- DNS rebinding defense: re-resolves hostname after connection
+- Rejects non-HTTP/HTTPS schemes
+- User-configurable timeouts
+
+**Supported Content Types:**
+- `text/html` — Readability article extraction (jsdom + @mozilla/readability)
+- `application/pdf` — pdf-parse text extraction with page metadata
+- `text/plain`, `text/markdown` — passthrough
+- `application/json` — pretty-printed JSON as text
+
+**Error Handling:**
+Partial success model — successfully fetched items are ingested, failures are returned in `errors` array with per-URL status and reason.
+
 ### CLI (rag-index)
 
 Command-line tool with five commands:
 - `index` — Clone Git repo and index files
 - `query` — Search for similar chunks
-- `ingest` — Ingest arbitrary files (PDFs, images, text)
+- `ingest` — Ingest arbitrary files (PDFs, images, text) or URLs with `--url` flag
 - `enrich` — Trigger/monitor enrichment tasks
 - `graph` — Query knowledge graph entities
 

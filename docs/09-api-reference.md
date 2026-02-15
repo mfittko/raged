@@ -27,9 +27,9 @@ Health check. Always unauthenticated.
 
 ### POST /ingest
 
-Chunk, embed, and store text items in a Qdrant collection.
+Chunk, embed, and store text items or fetch content from URLs in a Qdrant collection.
 
-**Request:**
+**Request (text-based):**
 ```json
 {
   "collection": "docs",
@@ -49,22 +49,57 @@ Chunk, embed, and store text items in a Qdrant collection.
 }
 ```
 
+**Request (URL-based):**
+```json
+{
+  "collection": "docs",
+  "items": [
+    {
+      "url": "https://example.com/article",
+      "source": "Example Article"
+    }
+  ]
+}
+```
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `collection` | string | No | Qdrant collection name (default: `docs`) |
-| `items` | array | Yes | Items to ingest |
+| `items` | array | Yes | Items to ingest (max 1000) |
 | `items[].id` | string | No | Base ID for chunks (auto-generated UUID if omitted) |
-| `items[].text` | string | Yes | Full text content to chunk and embed |
-| `items[].source` | string | Yes | Source identifier (URL, path, etc.) |
+| `items[].text` | string | Conditional* | Full text content to chunk and embed |
+| `items[].url` | string | Conditional* | URL to fetch content from (HTTP/HTTPS only) |
+| `items[].source` | string | Conditional** | Source identifier (URL, path, etc.) |
 | `items[].metadata` | object | No | Additional metadata stored with each chunk |
-| `items[].docType` | string | No | Document type (e.g., `code`, `text`, `pdf`, `image`, `slack`) for type-specific extraction |
-| `items[].enrich` | boolean | No | Enable async enrichment (default: `true` when enrichment is enabled) |
+| `items[].docType` | string | No | Document type (e.g., `code`, `text`, `pdf`, `image`, `slack`, `article`) for type-specific extraction |
+| `enrich` | boolean | No | Enable async enrichment (default: `true` when enrichment is enabled) |
 
-**Response:**
+\* Either `text` or `url` must be provided. If `url` is provided without `text`, the API fetches and extracts content server-side.
+
+\*\* `source` is required if `text` is provided without `url`. If `url` is provided, `source` defaults to the resolved URL.
+
+**Response (success):**
 ```json
 {
   "ok": true,
-  "upserted": 12
+  "upserted": 12,
+  "fetched": 1
+}
+```
+
+**Response (with errors):**
+```json
+{
+  "ok": true,
+  "upserted": 8,
+  "fetched": 1,
+  "errors": [
+    {
+      "url": "https://example.com/private",
+      "status": null,
+      "reason": "ssrf_blocked: private IP"
+    }
+  ]
 }
 ```
 
@@ -72,16 +107,28 @@ Chunk, embed, and store text items in a Qdrant collection.
 |-------|------|-------------|
 | `ok` | boolean | Success indicator |
 | `upserted` | number | Total chunks upserted (items x chunks per item) |
+| `fetched` | number | Number of URLs successfully fetched (omitted if 0) |
+| `errors` | array | Per-item errors (omitted if none) |
+| `errors[].url` | string | URL that failed |
+| `errors[].status` | number\|null | HTTP status code (null for non-HTTP errors) |
+| `errors[].reason` | string | Error reason |
 
 **Behavior:**
 1. Creates the collection if it doesn't exist (768d vectors, cosine distance)
-2. Auto-detects document type if `docType` not provided
-3. Runs tier-1 metadata extraction (heuristic/AST/EXIF based on type)
-4. Splits each item's text into chunks (~1800 characters, split on line boundaries)
-5. Embeds each chunk via Ollama
-6. Upserts all chunks into Qdrant with payload: `{ text, source, chunkIndex, enrichmentStatus, ...metadata }`
-7. If `enrich: true` and enrichment is enabled, enqueues async enrichment task to Redis
-8. Chunk IDs follow the pattern `<baseId>:<chunkIndex>`
+2. For URL items: Fetches content with SSRF protection, extracts text based on content type
+3. Auto-detects document type if `docType` not provided
+4. Runs tier-1 metadata extraction (heuristic/AST/EXIF based on type)
+5. Splits each item's text into chunks (~1800 characters, split on line boundaries)
+6. Embeds each chunk via Ollama
+7. Upserts all chunks into Qdrant with payload: `{ text, source, chunkIndex, enrichmentStatus, ...metadata }`
+8. If `enrich: true` and enrichment is enabled, enqueues async enrichment task to Redis
+9. Chunk IDs follow the pattern `<baseId>:<chunkIndex>`
+
+**URL Ingestion:**
+- Supports HTML (Readability extraction), PDF (pdf-parse), plain text, markdown, JSON
+- SSRF protection blocks private IPs, DNS rebinding attacks
+- Partial success: successfully fetched items are ingested, failures returned in `errors`
+- Fetch metadata (resolvedUrl, contentType, fetchStatus) added to chunk payloads
 
 ---
 
