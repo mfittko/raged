@@ -351,7 +351,7 @@ curl -s "$RAG_STACK_URL/enrichment/stats" \
 
 Via CLI:
 ```bash
-node dist/index.js enrich --show-failed \
+node dist/index.js enrich --stats-only \
   --api "$RAG_STACK_URL" \
   --token "$RAG_STACK_TOKEN"
 ```
