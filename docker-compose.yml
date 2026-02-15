@@ -35,7 +35,6 @@ services:
       EXTRACTOR_MODEL_CAPABLE: "llama3"
       EXTRACTOR_MODEL_VISION: "llava"
       WORKER_CONCURRENCY: "4"
-      ENRICHMENT_ENABLED: "${ENRICHMENT_ENABLED:-false}"
     depends_on: [postgres, ollama]
     profiles: ["enrichment", "full"]
 
