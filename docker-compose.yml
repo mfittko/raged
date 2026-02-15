@@ -65,10 +65,14 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      MINIO_BUCKET: "${BLOB_STORE_BUCKET:-rag-raw}"
     entrypoint: >
       /bin/sh -c "
-      mc alias set myminio http://minio:9000 minioadmin minioadmin;
-      mc mb myminio/rag-raw --ignore-existing;
+      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb myminio/$${MINIO_BUCKET} --ignore-existing;
       exit 0;
       "
     profiles: ["storage"]
