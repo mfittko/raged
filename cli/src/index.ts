@@ -20,8 +20,9 @@ const SUPPORTED_INGEST_EXTS = new Set([
 
 type IngestItem = { 
   id?: string; 
-  text: string; 
-  source: string; 
+  text?: string; 
+  url?: string;
+  source?: string; 
   metadata?: Record<string, any>;
   docType?: string;
   enrich?: boolean;
@@ -313,13 +314,51 @@ async function cmdIngest(options: any) {
   const collection = options.collection || "docs";
   const file = options.file;
   const dir = options.dir;
+  const url = options.url;
   const enrich = options.enrich !== false;
   const docTypeOverride = options.docType;
   const maxFiles = Number(options.maxFiles || DEFAULT_MAX_FILES);
 
-  if (!file && !dir) {
-    console.error("Error: --file or --dir is required");
+  // Check for mutual exclusion
+  const inputCount = [file, dir, url].filter(Boolean).length;
+  if (inputCount === 0) {
+    console.error("Error: --file, --dir, or --url is required");
     process.exit(2);
+  }
+  if (inputCount > 1) {
+    console.error("Error: --file, --dir, and --url are mutually exclusive");
+    process.exit(2);
+  }
+
+  // Handle URL ingestion
+  if (url) {
+    console.log(`Fetching ${url} ...`);
+    const item: IngestItem = { url };
+    if (docTypeOverride) item.docType = docTypeOverride;
+    if (enrich !== undefined) item.enrich = enrich;
+
+    try {
+      const result = await ingest(api, collection, [item], token);
+      
+      if (result.errors && result.errors.length > 0) {
+        for (const err of result.errors) {
+          console.error(`✗ Failed to ingest ${err.url} — ${err.reason}`);
+        }
+      }
+      
+      if (result.upserted > 0) {
+        const docTypeLabel = docTypeOverride || "unknown";
+        console.log(`✓ Ingested ${result.upserted} chunks from ${url} (${docTypeLabel})`);
+      }
+      
+      if (result.upserted === 0 && (!result.errors || result.errors.length === 0)) {
+        console.log(`✗ No content ingested from ${url}`);
+      }
+    } catch (err) {
+      console.error(`✗ Failed to ingest ${url}:`, err);
+      process.exit(1);
+    }
+    return;
   }
 
   const filesToProcess: string[] = [];
@@ -545,6 +584,7 @@ async function main() {
     .description("Ingest arbitrary files (PDFs, images, text)")
     .option("--file <path>", "Single file to ingest")
     .option("--dir <path>", "Directory to ingest")
+    .option("--url <url>", "URL to fetch and ingest")
     .option("--api <url>", "RAG API URL", "http://localhost:8080")
     .option("--collection <name>", "Qdrant collection name", "docs")
     .option("--token <token>", "Bearer token for auth")
