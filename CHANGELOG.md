@@ -8,6 +8,7 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 
 
 
+
 ## February 16, 2026
 
 ### Added
@@ -17,6 +18,8 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 
 ### Changed
 
+- **Plain filter objects** ([#75](https://github.com/mfittko/RAGed/pull/75)): Query commands now build simple key-value filters and send them directly so the Postgres backend can translate them to SQL, eliminating the previous Qdrant-specific payload and helper.
+- **Updated CLI help text** ([#75](https://github.com/mfittko/RAGed/pull/75)): All CLI help messages now refer to generic “Collection” terminology instead of the Qdrant-specific phrasing to reflect the backend migration.
 - **Worker HTTP storage migration** ([#74](https://github.com/mfittko/RAGed/pull/74)): Worker now polls and reports tasks through new internal API HTTP endpoints instead of direct Postgres access, including a dedicated async HTTP client, updated pipeline, and API-based config, cutting asyncpg/pgvector usage and resulting in a leaner worker codebase.
 - **Startup Config Guard** ([#70](https://github.com/mfittko/raged/pull/70)): API startup now validates DATABASE_URL, OLLAMA_URL, and QDRANT_URL (with tests) before calling listen(), preventing confusing downstream failures when essential config is missing.
 - **Token Hardening Warning** ([#70](https://github.com/mfittko/raged/pull/70)): The auth module now warns when RAGED_API_TOKEN is shorter than 16 characters, highlighting weak secrets during startup and covering the behavior with tests.
