@@ -124,6 +124,11 @@ async def test_process_task_multi_chunk_last(mock_task):
     mock_task["chunkIndex"] = 2
     mock_task["totalChunks"] = 3
     mock_task["qdrantId"] = "repo:file.py:2"
+    mock_task["allChunks"] = [
+        "First chunk text",
+        "Second chunk text",
+        "Third chunk text",
+    ]
 
     with (
         patch("src.pipeline.api_client") as mock_api_client,
@@ -143,6 +148,8 @@ async def test_process_task_multi_chunk_last(mock_task):
 
         # Verify document-level extraction was triggered
         assert mock_adapter.extract_metadata.called
+        extract_text = mock_adapter.extract_metadata.call_args[0][0]
+        assert extract_text == "First chunk text\n\nSecond chunk text\n\nThird chunk text"
 
         # Verify API submit was called with tier2 and tier3
         call_args = mock_api_client.submit_result.call_args

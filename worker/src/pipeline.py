@@ -28,6 +28,7 @@ async def process_task(task: dict) -> None:
     source = task.get("source", "")
     collection = task.get("collection", "default")
     task_id = task["taskId"]
+    all_chunks = task.get("allChunks")
 
     logger.info(f"Processing task for {base_id}:{chunk_index}/{total_chunks}")
 
@@ -43,7 +44,7 @@ async def process_task(task: dict) -> None:
 
         if chunk_index == total_chunks - 1:
             tier3_result = await run_document_level_extraction(
-                base_id, doc_type, text, total_chunks, source
+                base_id, doc_type, text, total_chunks, source, all_chunks
             )
             tier3_data = tier3_result.get("tier3")
             entities = tier3_result.get("entities")
@@ -123,15 +124,14 @@ async def run_tier2_extraction(text: str) -> dict:
 
 
 async def run_document_level_extraction(
-    base_id: str, doc_type: str, last_chunk_text: str, total_chunks: int, source: str
+    base_id: str,
+    doc_type: str,
+    last_chunk_text: str,
+    total_chunks: int,
+    source: str,
+    all_chunks: list[str] | None = None,
 ) -> dict:
     """Run tier-3 LLM extraction on the full document.
-
-    IMPORTANT LIMITATION: Currently only has access to the last chunk's text.
-    For multi-chunk documents, entity extraction and summarization quality may be reduced.
-
-    TODO: API should return all chunk texts in the claim response to enable
-    full-document analysis. This is tracked in the parent issue for complete migration.
 
     Args:
         base_id: Legacy base ID
@@ -139,23 +139,23 @@ async def run_document_level_extraction(
         last_chunk_text: Text from the last chunk
         total_chunks: Number of chunks
         source: Document source
+        all_chunks: Ordered list of all chunk texts for the document
 
     Returns:
         Dictionary with tier3, entities, relationships, and summary
     """
     logger.info(f"Running document-level extraction for {base_id}")
 
-    # Warn if multi-chunk document - extraction quality will be limited
-    if total_chunks > 1:
+    full_text = last_chunk_text
+    if all_chunks:
+        full_text = "\n\n".join(all_chunks)
+    elif total_chunks > 1:
         logger.warning(
             f"Document {base_id} has {total_chunks} chunks, but only last chunk text "
-            f"is available for tier-3 extraction. Entity/summary quality may be reduced."
+            f"is available for tier-3 extraction because allChunks is missing from task payload."
         )
 
     try:
-        # For now, use the last chunk text for document-level extraction
-        full_text = last_chunk_text
-
         # Type-specific metadata extraction
         schema_cls, prompt_template = get_schema_for_doctype(doc_type)
         schema_dict = schema_cls.model_json_schema()

@@ -82,12 +82,18 @@ async def claim_task(worker_id: str) -> dict[str, Any] | None:
                 chunk_text = chunk.get("text", "")
                 break
 
+        all_chunks = [
+            chunk.get("text", "")
+            for chunk in sorted(chunks, key=lambda item: item.get("chunkIndex", 0))
+        ]
+
         # Build task object matching the legacy format
         task = {
             **payload,
             "taskId": task_data["id"],
             "attempt": task_data["attempt"],
             "text": chunk_text,
+            "allChunks": all_chunks,
         }
 
         return task

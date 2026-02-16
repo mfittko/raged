@@ -118,6 +118,15 @@ describe("internal service", () => {
         })
       ).rejects.toThrow("Invalid chunk index");
     });
+
+    it("accepts chunkId when baseId contains colons", async () => {
+      await expect(
+        submitTaskResult("task-123", {
+          chunkId: "repo:file.py:0",
+          collection: "docs",
+        })
+      ).resolves.not.toThrow();
+    });
   });
 
   describe("failTask", () => {

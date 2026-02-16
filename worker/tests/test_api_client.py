@@ -56,6 +56,7 @@ async def test_claim_task_success(mock_httpx_client):
     assert task["chunkIndex"] == 0
     assert task["totalChunks"] == 2
     assert task["text"] == "First chunk text"
+    assert task["allChunks"] == ["First chunk text", "Second chunk text"]
     assert task["attempt"] == 1
 
     mock_httpx_client.post.assert_called_once_with(

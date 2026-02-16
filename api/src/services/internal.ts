@@ -136,12 +136,12 @@ export async function submitTaskResult(taskId: string, result: TaskResultRequest
     await client.query("BEGIN");
 
     // Parse chunkId to get document base_id and chunk_index
-    const chunkIdParts = result.chunkId.split(":");
-    if (chunkIdParts.length !== 2) {
+    const separatorIndex = result.chunkId.lastIndexOf(":");
+    if (separatorIndex <= 0 || separatorIndex === result.chunkId.length - 1) {
       throw new Error(`Invalid chunkId format: ${result.chunkId}`);
     }
-    const baseId = chunkIdParts[0];
-    const chunkIndex = parseInt(chunkIdParts[1], 10);
+    const baseId = result.chunkId.slice(0, separatorIndex);
+    const chunkIndex = parseInt(result.chunkId.slice(separatorIndex + 1), 10);
     
     if (isNaN(chunkIndex) || chunkIndex < 0) {
       throw new Error(`Invalid chunk index in chunkId: ${result.chunkId}`);
