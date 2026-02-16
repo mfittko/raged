@@ -6,14 +6,19 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 
 ---
 
+
 ## February 16, 2026
 
 ### Added
 
+- **Service Healthchecks** ([#70](https://github.com/mfittko/raged/pull/70)): Docker Compose now performs healthchecks for qdrant and ollama and gates service startup on healthy status to ensure dependent services are ready before the API begins operations.
 - **Postgres Database Layer** ([#63](https://github.com/mfittko/raged/pull/63)): Added the `db` module with a Postgres pool, query helper, migration runner, unit tests, and the initial schema migration so the API boots its tables on startup and enqueues enrichment work via Postgres.
 
 ### Changed
 
+- **Startup Config Guard** ([#70](https://github.com/mfittko/raged/pull/70)): API startup now validates DATABASE_URL, OLLAMA_URL, and QDRANT_URL (with tests) before calling listen(), preventing confusing downstream failures when essential config is missing.
+- **Token Hardening Warning** ([#70](https://github.com/mfittko/raged/pull/70)): The auth module now warns when RAGED_API_TOKEN is shorter than 16 characters, highlighting weak secrets during startup and covering the behavior with tests.
+- **Config Docs & Defaults** ([#70](https://github.com/mfittko/raged/pull/70)): Updated `.env.example` with worker environment variables and refreshed worker default DB URL naming to `raged`, aligning documentation and runtime defaults with the current stack.
 - **Project Renamed to raged** ([#67](https://github.com/mfittko/raged/pull/67)): Renamed the repo, packages, CLI binary, Helm chart, skill/plugin files, docs, and environment variables from the old rag-stack names to raged variants so tooling, manifests, and credentials match the new branding.
 - **Postgres API Services** ([#65](https://github.com/mfittko/raged/pull/65)): Rewrote the ingest, query, and enrichment services along with shared helpers to run entirely on Postgres, preserving functionality while fixing SQL injection risks, batching upserts, enforcing validation, and tightening connection handling for pgvector-driven searches.
 - **Internal Task Endpoints** ([#65](https://github.com/mfittko/raged/pull/65)): Added Postgres-backed internal endpoints for claiming tasks, writing results, handling failures, and recovering stale work, plus comprehensive tests to validate the enriched worker workflow and improved coverage.
