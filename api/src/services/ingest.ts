@@ -256,18 +256,18 @@ export async function ingest(
       const identityKey = deriveIdentityKey(procItem.source);
       
       // Upsert document
-      const docResult = await client.query<{ id: string }>(
+      const docResult = await client.query<{ id: string; base_id: string }>(
         `INSERT INTO documents (
           base_id, identity_key, source, item_url, doc_type, collection, metadata, ingested_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (collection, identity_key) 
         DO UPDATE SET
-          base_id = EXCLUDED.base_id,
+          base_id = documents.base_id,
           item_url = EXCLUDED.item_url,
           doc_type = EXCLUDED.doc_type,
           metadata = EXCLUDED.metadata,
           last_seen = now()
-        RETURNING id`,
+        RETURNING id, base_id`,
         [
           procItem.baseId,
           identityKey,
@@ -281,6 +281,7 @@ export async function ingest(
       );
 
       const documentId = docResult.rows[0].id;
+      const persistedBaseId = docResult.rows[0].base_id;
 
       // Embed chunks in batches
       for (let batchStart = 0; batchStart < procItem.chunks.length; batchStart += EMBED_BATCH_SIZE) {
@@ -292,7 +293,7 @@ export async function ingest(
         const chunkValues: unknown[] = [];
         const chunkRows: string[] = [];
         
-        // 6 parameters per row: document_id, chunk_index, text, embedding, enrichment_status, tier1_meta
+        // 6 parameters per row for the chunks INSERT query: document_id, chunk_index, text, embedding, enrichment_status, tier1_meta
         const PARAMS_PER_CHUNK = 6;
         
         for (let i = 0; i < batchChunks.length; i++) {
@@ -334,10 +335,10 @@ export async function ingest(
         for (let chunkIndex = 0; chunkIndex < procItem.chunks.length; chunkIndex++) {
           enrichmentTasks.push({
             taskId: randomUUID(),
-            chunkId: `${procItem.baseId}:${chunkIndex}`,
+            chunkId: `${persistedBaseId}:${chunkIndex}`,
             collection: col,
             docType: procItem.docType,
-            baseId: procItem.baseId,
+            baseId: persistedBaseId,
             chunkIndex,
             totalChunks: procItem.chunks.length,
             text: procItem.chunks[chunkIndex],

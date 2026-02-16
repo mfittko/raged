@@ -1,5 +1,5 @@
 import { getPool } from "../db.js";
-import { translateFilter, formatVector } from "../pg-helpers.js";
+import { translateFilter } from "../pg-helpers.js";
 import { embed as embedTexts } from "../ollama.js";
 
 export interface QueryRequest {
@@ -53,7 +53,7 @@ export async function query(
   }
   const topK = request.topK ?? 8;
 
-  // Translate filter to Postgres WHERE clause (offset by 4 for the base params: $1=collection, $2=vector, $3=topK)
+  // Translate filter to Postgres WHERE clause (offset by 3 for base params: $1=collection, $2=vector, $3=topK)
   const { sql: filterSql, params: filterParams } = translateFilter(request.filter, 3);
 
   // Build query with pgvector cosine distance
@@ -101,7 +101,7 @@ export async function query(
     [col, JSON.stringify(vector), topK, ...filterParams]
   );
 
-  const results: QueryResultItem[] = result.rows.map((row) => ({
+  const results: QueryResultItem[] = result.rows.map((row: typeof result.rows[number]) => ({
     id: row.chunk_id,
     score: 1 - row.distance, // Convert distance to similarity score
     source: row.source,
@@ -151,14 +151,14 @@ export async function query(
       const expandedResult = await pool.query<{ name: string; type: string | null }>(
         `WITH RECURSIVE entity_graph AS (
           -- Base case: entities mentioned in results
-          SELECT e.id, e.name, e.type, 0 AS depth
+          SELECT e.id, e.name, e.type, 0 AS depth, ARRAY[e.id] AS path
           FROM entities e
           WHERE e.name = ANY($1::text[])
           
           UNION
           
           -- Recursive case: entities connected via relationships (up to 2 hops)
-          SELECT e.id, e.name, e.type, eg.depth + 1
+          SELECT e.id, e.name, e.type, eg.depth + 1, eg.path || e.id
           FROM entity_graph eg
           JOIN entity_relationships er ON er.source_id = eg.id OR er.target_id = eg.id
           JOIN entities e ON e.id = CASE 
@@ -166,6 +166,7 @@ export async function query(
             ELSE er.source_id
           END
           WHERE eg.depth < 2
+            AND e.id <> ALL(eg.path)
         )
         SELECT DISTINCT name, type
         FROM entity_graph`,
@@ -173,7 +174,6 @@ export async function query(
       );
 
       const expandedEntities = expandedResult.rows;
-      const entityMap = new Map(expandedEntities.map(e => [e.name, e]));
 
       // Fetch relationships between expanded entities
       const relationshipsResult = await pool.query<{
@@ -197,7 +197,7 @@ export async function query(
           name: e.name,
           type: e.type || "unknown",
         })),
-        relationships: relationshipsResult.rows.map(r => ({
+        relationships: relationshipsResult.rows.map((r) => ({
           source: r.source_name,
           target: r.target_name,
           type: r.relationship_type,

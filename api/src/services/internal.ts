@@ -60,7 +60,7 @@ export async function claimTask(request: TaskClaimRequest): Promise<TaskClaimRes
   try {
     await client.query("BEGIN");
 
-    // Dequeue next task with SKIP LOCKED
+    // Dequeue next task with SKIP LOCKED (PostgreSQL 9.5+)
     const result = await client.query<{
       id: string;
       payload: Record<string, unknown>;
@@ -112,7 +112,7 @@ export async function claimTask(request: TaskClaimRequest): Promise<TaskClaimRes
         payload: task.payload,
         attempt: task.attempt,
       },
-      chunks: chunksResult.rows.map(r => ({
+      chunks: chunksResult.rows.map((r) => ({
         chunkIndex: r.chunk_index,
         text: r.text,
       })),

@@ -104,6 +104,7 @@ export function buildApp() {
   // Graph endpoint
   app.get("/graph/entity/:name", { schema: graphEntitySchema }, async (req, reply) => {
     const { name } = req.params as { name: string };
+    const { limit = 100 } = req.query as { limit?: number };
     const pool = getPool();
     
     // Get entity with related entities and relationships
@@ -142,8 +143,8 @@ export function buildApp() {
        JOIN entities et ON er.target_id = et.id
        WHERE es.name = $1 OR et.name = $1
        ORDER BY er.created_at DESC
-       LIMIT 100`,
-      [name]
+       LIMIT $2`,
+      [name, limit]
     );
 
     return reply.send({
@@ -153,7 +154,7 @@ export function buildApp() {
         description: entity.description,
         mentionCount: entity.mention_count,
       },
-      relationships: relationshipsResult.rows.map(r => ({
+      relationships: relationshipsResult.rows.map((r) => ({
         source: r.source_name,
         target: r.target_name,
         type: r.relationship_type,

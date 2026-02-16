@@ -80,15 +80,34 @@ export const graphEntitySchema = {
       name: { type: "string" as const, minLength: 1 },
     },
   },
+  querystring: {
+    type: "object" as const,
+    additionalProperties: false as const,
+    properties: {
+      limit: { type: "integer" as const, minimum: 1, maximum: 500, default: 100 },
+    },
+  },
 };
 
 // Internal endpoint schemas for worker communication
 export const internalTaskClaimSchema = {
   body: {
     type: "object" as const,
+    additionalProperties: false as const,
     properties: {
-      workerId: { type: "string" as const, minLength: 1 },
-      leaseDuration: { type: "integer" as const, minimum: 1, maximum: 3600 },
+      workerId: {
+        type: "string" as const,
+        minLength: 1,
+        default: "unknown",
+        description: "Optional worker identifier; defaults to 'unknown' when omitted.",
+      },
+      leaseDuration: {
+        type: "integer" as const,
+        minimum: 1,
+        maximum: 3600,
+        default: 300,
+        description: "Optional lease duration in seconds; defaults to 300 when omitted.",
+      },
     },
   },
 };

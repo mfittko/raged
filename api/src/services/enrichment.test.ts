@@ -82,6 +82,32 @@ describe("enrichment service", () => {
         getEnrichmentStatus({ baseId: "nonexistent" })
       ).rejects.toThrow();
     });
+
+    it("returns mixed status when chunks have different states", async () => {
+      const { getPool } = await import("../db.js");
+      (getPool as any).mockReturnValueOnce({
+        query: vi.fn(async () => ({
+          rows: [
+            {
+              enrichment_status: "enriched",
+              enriched_at: new Date().toISOString(),
+              tier2_meta: null,
+              tier3_meta: null,
+            },
+            {
+              enrichment_status: "pending",
+              enriched_at: null,
+              tier2_meta: null,
+              tier3_meta: null,
+            },
+          ],
+        })),
+      });
+
+      const result = await getEnrichmentStatus({ baseId: "mixed-id" });
+      expect(result.status).toBe("mixed");
+      expect(result.chunks.total).toBe(2);
+    });
   });
 
   describe("getEnrichmentStats", () => {
@@ -95,10 +121,77 @@ describe("enrichment service", () => {
 
   describe("enqueueEnrichment", () => {
     it("enqueues chunks for enrichment", async () => {
+      const poolQuery = vi
+        .fn()
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              chunk_id: "test-id:0",
+              document_id: "doc-1",
+              base_id: "test-id",
+              chunk_index: 0,
+              total_chunks: 1,
+              text: "test",
+              source: "test.txt",
+              doc_type: "text",
+              tier1_meta: {},
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const { getPool } = await import("../db.js");
+      (getPool as any).mockReturnValueOnce({
+        query: poolQuery,
+        connect: vi.fn(async () => ({
+          query: vi.fn(async () => ({ rows: [] })),
+          release: vi.fn(),
+        })),
+      });
+
       const result = await enqueueEnrichment({ collection: "test" });
 
       expect(result.ok).toBe(true);
       expect(result.enqueued).toBeGreaterThanOrEqual(0);
+    });
+
+    it("excludes already-enriched chunks when force is false", async () => {
+      const poolQuery = vi
+        .fn()
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              chunk_id: "test-id:0",
+              document_id: "doc-1",
+              base_id: "test-id",
+              chunk_index: 0,
+              total_chunks: 1,
+              text: "test",
+              source: "test.txt",
+              doc_type: "text",
+              tier1_meta: {},
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const clientQuery = vi.fn(async () => ({ rows: [] }));
+
+      const { getPool } = await import("../db.js");
+      (getPool as any).mockReturnValueOnce({
+        query: poolQuery,
+        connect: vi.fn(async () => ({
+          query: clientQuery,
+          release: vi.fn(),
+        })),
+      });
+
+      const result = await enqueueEnrichment({ collection: "test", force: false });
+      expect(result.ok).toBe(true);
+      expect(result.enqueued).toBe(1);
+
+      const [sql] = poolQuery.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain("c.enrichment_status != 'enriched'");
     });
   });
 });

@@ -221,83 +221,105 @@ export async function enqueueEnrichment(
     filterSql = " AND c.enrichment_status != 'enriched'";
   }
 
-  // Fetch chunks that need enrichment
-  const chunksResult = await pool.query<{
+  interface ChunkRow {
     chunk_id: string;
+    document_id: string;
     base_id: string;
     chunk_index: number;
+    total_chunks: number;
     text: string;
     source: string;
     doc_type: string;
     tier1_meta: Record<string, unknown> | null;
-  }>(
-    `SELECT 
-      c.id::text || ':' || c.chunk_index AS chunk_id,
-      d.base_id,
-      c.chunk_index,
-      c.text,
-      d.source,
-      c.doc_type,
-      c.tier1_meta
-    FROM chunks c
-    JOIN documents d ON c.document_id = d.id
-    WHERE d.collection = $1${filterSql}
-    ORDER BY d.id, c.chunk_index`,
-    [col]
-  );
-
-  // Count chunks per baseId
-  const baseIdToTotalChunks = new Map<string, number>();
-  for (const chunk of chunksResult.rows) {
-    const current = baseIdToTotalChunks.get(chunk.base_id) ?? 0;
-    baseIdToTotalChunks.set(chunk.base_id, current + 1);
   }
 
-  // Build enrichment tasks
-  const tasks: EnrichmentTask[] = [];
-  const now = new Date().toISOString();
+  const PAGE_SIZE = 1000;
+  const TASK_BATCH_SIZE = 100;
+  let enqueued = 0;
+  let lastDocumentId: string | null = null;
+  let lastChunkIndex = -1;
 
-  for (const chunk of chunksResult.rows) {
-    const totalChunks = baseIdToTotalChunks.get(chunk.base_id) ?? 1;
-    
-    tasks.push({
-      taskId: randomUUID(),
-      chunkId: chunk.chunk_id,
-      collection: col,
-      docType: chunk.doc_type || "text",
-      baseId: chunk.base_id,
-      chunkIndex: chunk.chunk_index,
-      totalChunks,
-      text: chunk.text,
-      source: chunk.source,
-      tier1Meta: chunk.tier1_meta || {},
-      attempt: 1,
-      enqueuedAt: now,
-    });
-  }
-
-  // Enqueue tasks in batches
-  const BATCH_SIZE = 100;
   const client = await pool.connect();
   try {
-    for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
-      const batch = tasks.slice(i, i + BATCH_SIZE);
-      
-      const values: unknown[] = [];
-      const rowsSql: string[] = [];
+    while (true) {
+      const cursorClause: string = lastDocumentId
+        ? ` AND (d.id > $2::uuid OR (d.id = $2::uuid AND c.chunk_index > $3))`
+        : "";
 
-      for (let j = 0; j < batch.length; j++) {
-        const task = batch[j];
-        const base = j * 4;
-        rowsSql.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`);
-        values.push("enrichment", "pending", JSON.stringify(task), now);
+      const queryParams: unknown[] = [col];
+      if (lastDocumentId) {
+        queryParams.push(lastDocumentId, lastChunkIndex);
+      }
+      const limitParam = queryParams.length + 1;
+      queryParams.push(PAGE_SIZE);
+
+      const chunkPage: { rows: ChunkRow[] } = await pool.query<ChunkRow>(
+        `SELECT
+          c.id::text || ':' || c.chunk_index AS chunk_id,
+          d.id AS document_id,
+          d.base_id,
+          c.chunk_index,
+          COUNT(*) OVER (PARTITION BY d.base_id)::int AS total_chunks,
+          c.text,
+          d.source,
+          c.doc_type,
+          c.tier1_meta
+        FROM chunks c
+        JOIN documents d ON c.document_id = d.id
+        WHERE d.collection = $1${filterSql}${cursorClause}
+        ORDER BY d.id, c.chunk_index
+        LIMIT $${limitParam}`,
+        queryParams
+      );
+
+      if (chunkPage.rows.length === 0) {
+        break;
       }
 
-      await client.query(
-        `INSERT INTO task_queue (queue, status, payload, run_after)
-         VALUES ${rowsSql.join(", ")}`,
-        values
-      );
+      const now = new Date().toISOString();
+      for (let i = 0; i < chunkPage.rows.length; i += TASK_BATCH_SIZE) {
+        const batchRows = chunkPage.rows.slice(i, i + TASK_BATCH_SIZE);
+        const tasks: EnrichmentTask[] = [];
+
+        for (const chunk of batchRows) {
+          tasks.push({
+            taskId: randomUUID(),
+            chunkId: chunk.chunk_id,
+            collection: col,
+            docType: chunk.doc_type || "text",
+            baseId: chunk.base_id,
+            chunkIndex: chunk.chunk_index,
+            totalChunks: chunk.total_chunks,
+            text: chunk.text,
+            source: chunk.source,
+            tier1Meta: chunk.tier1_meta || {},
+            attempt: 1,
+            enqueuedAt: now,
+          });
+        }
+
+        const values: unknown[] = [];
+        const rowsSql: string[] = [];
+
+        for (let j = 0; j < tasks.length; j++) {
+          const task = tasks[j];
+          const base = j * 4;
+          rowsSql.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`);
+          values.push("enrichment", "pending", JSON.stringify(task), now);
+        }
+
+        await client.query(
+          `INSERT INTO task_queue (queue, status, payload, run_after)
+           VALUES ${rowsSql.join(", ")}`,
+          values
+        );
+
+        enqueued += tasks.length;
+      }
+
+      const lastRow: ChunkRow = chunkPage.rows[chunkPage.rows.length - 1];
+      lastDocumentId = lastRow.document_id;
+      lastChunkIndex = lastRow.chunk_index;
     }
   } catch (error) {
     // Re-throw the error after ensuring proper cleanup in finally
@@ -306,5 +328,5 @@ export async function enqueueEnrichment(
     client.release();
   }
 
-  return { ok: true, enqueued: tasks.length };
+  return { ok: true, enqueued };
 }

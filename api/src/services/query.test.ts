@@ -101,4 +101,84 @@ describe("query service", () => {
     expect(result.ok).toBe(true);
     expect(result.results.length).toBe(0);
   });
+
+  it("applies translated filters with chunk table alias", async () => {
+    const queryMock = vi.fn(async () => ({
+      rows: [
+        {
+          chunk_id: "test-id:0",
+          distance: 0.1,
+          text: "hello world",
+          source: "test.txt",
+          chunk_index: 0,
+          base_id: "test-id",
+          doc_type: "code",
+          repo_id: null,
+          repo_url: null,
+          path: null,
+          lang: null,
+          item_url: null,
+          tier1_meta: {},
+          tier2_meta: null,
+          tier3_meta: null,
+        },
+      ],
+    }));
+
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    await query({ query: "hello", filter: { docType: "code" } });
+
+    expect(queryMock).toHaveBeenCalled();
+    const firstCall = queryMock.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const firstCallArgs = firstCall as unknown as unknown[];
+    const sql = String(firstCallArgs[0] ?? "");
+    const params = (firstCallArgs[1] ?? []) as unknown[];
+    expect(sql).toContain("c.doc_type = $4");
+    expect(params[3]).toBe("code");
+  });
+
+  it("returns graph data when graph expansion is requested", async () => {
+    const queryMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            chunk_id: "test-id:0",
+            distance: 0.1,
+            text: "hello world",
+            source: "test.txt",
+            chunk_index: 0,
+            base_id: "test-id",
+            doc_type: "text",
+            repo_id: null,
+            repo_url: null,
+            path: null,
+            lang: null,
+            item_url: null,
+            tier1_meta: {},
+            tier2_meta: { entities: [{ text: "EntityA" }] },
+            tier3_meta: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ name: "EntityA", type: "person" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ source_name: "EntityA", target_name: "EntityB", relationship_type: "related_to" }],
+      });
+
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    const result = await query({ query: "hello", graphExpand: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.graph).toBeDefined();
+    expect(result.graph?.entities.length).toBeGreaterThan(0);
+    expect(result.graph?.relationships.length).toBeGreaterThan(0);
+  });
 });
