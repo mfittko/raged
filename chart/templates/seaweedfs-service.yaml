@@ -4,7 +4,7 @@ kind: Service
 metadata:
   name: {{ .Release.Name }}-seaweedfs
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
   selector: { app: {{ .Release.Name }}-seaweedfs }

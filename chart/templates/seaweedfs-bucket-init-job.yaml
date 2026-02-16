@@ -4,7 +4,7 @@ kind: Job
 metadata:
   name: {{ .Release.Name }}-seaweedfs-bucket-init
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
@@ -13,7 +13,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "rag.labels" . | nindent 8 }}
+        {{- include "raged.labels" . | nindent 8 }}
     spec:
       restartPolicy: OnFailure
       containers:

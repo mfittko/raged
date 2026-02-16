@@ -4,7 +4,7 @@ kind: Deployment
 metadata:
   name: {{ .Release.Name }}-enrichment-worker
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.enrichment.worker.replicas }}
   selector:
@@ -13,7 +13,7 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}-enrichment-worker
-        {{- include "rag.labels" . | nindent 8 }}
+        {{- include "raged.labels" . | nindent 8 }}
     spec:
       securityContext:
         runAsNonRoot: true

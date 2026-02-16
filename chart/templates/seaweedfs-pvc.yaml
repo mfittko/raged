@@ -4,7 +4,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: {{ .Release.Name }}-seaweedfs-data
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
 spec:
   accessModes: ["ReadWriteOnce"]
   resources: { requests: { storage: {{ .Values.seaweedfs.storage.size }} } }

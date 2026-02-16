@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: {{ .Release.Name }}-api-config
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
 data:
   OLLAMA_URL: "http://{{ .Release.Name }}-ollama:{{ .Values.ollama.service.port }}"
   EMBED_MODEL: "{{ .Values.api.env.EMBED_MODEL }}"

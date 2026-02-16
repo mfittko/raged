@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: {{ .Release.Name }}-api
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
 spec:
   selector:
     app: {{ .Release.Name }}-api

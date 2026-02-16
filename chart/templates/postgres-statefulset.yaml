@@ -3,7 +3,7 @@ kind: StatefulSet
 metadata:
   name: {{ .Release.Name }}-postgres
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
 spec:
   serviceName: {{ .Release.Name }}-postgres
   replicas: 1
@@ -13,7 +13,7 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}-postgres
-        {{- include "rag.labels" . | nindent 8 }}
+        {{- include "raged.labels" . | nindent 8 }}
     spec:
       securityContext:
         runAsNonRoot: true

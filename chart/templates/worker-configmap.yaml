@@ -4,7 +4,7 @@ kind: ConfigMap
 metadata:
   name: {{ .Release.Name }}-worker-config
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
 data:
   API_URL: "http://{{ .Release.Name }}-api:{{ .Values.api.service.port }}"
   OLLAMA_URL: "http://{{ .Release.Name }}-ollama:{{ .Values.ollama.service.port }}"

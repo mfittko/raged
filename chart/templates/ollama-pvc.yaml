@@ -4,7 +4,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: {{ .Release.Name }}-ollama
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
 spec:
   accessModes: ["ReadWriteOnce"]
   resources: { requests: { storage: {{ .Values.ollama.storage.size }} } }

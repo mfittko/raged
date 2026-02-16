@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: {{ .Release.Name }}-postgres-init
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
 data:
   01-enable-pgvector.sql: |
     CREATE EXTENSION IF NOT EXISTS vector;

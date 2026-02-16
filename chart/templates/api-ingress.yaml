@@ -4,7 +4,7 @@ kind: Ingress
 metadata:
   name: {{ .Release.Name }}-api
   labels:
-    {{- include "rag.labels" . | nindent 4 }}
+    {{- include "raged.labels" . | nindent 4 }}
   {{- if .Values.api.ingress.annotations }}
   annotations:
     {{- toYaml .Values.api.ingress.annotations | nindent 4 }}

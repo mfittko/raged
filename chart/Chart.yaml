@@ -1,6 +1,6 @@
 apiVersion: v2
-name: rag-stack
-description: Self-hosted RAG stack (API + Postgres + Ollama) with optional enrichment worker and SeaweedFS blob storage
+name: raged
+description: Self-hosted RAG engine (API + Postgres + Ollama) with optional enrichment worker and SeaweedFS blob storage
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
