@@ -46,7 +46,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-seaweedfs-secret
                   key: S3_SECRET_KEY
-          volumeMounts: [{ name: data, mountPath: /data }]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet: { path: /cluster/status, port: 9333 }
             initialDelaySeconds: 5
@@ -58,4 +62,6 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim: { claimName: {{ .Release.Name }}-seaweedfs-data }
+        - name: tmp
+          emptyDir: {}
 {{- end }}

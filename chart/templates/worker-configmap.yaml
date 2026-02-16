@@ -5,9 +5,12 @@ metadata:
   name: {{ .Release.Name }}-worker-config
   labels:
     {{- include "rag.labels" . | nindent 4 }}
+{{- if not .Values.migration.allowBrokenLegacyRuntime }}
+{{- fail "migration.allowBrokenLegacyRuntime=false: worker runtime migration is incomplete. Set migration.allowBrokenLegacyRuntime=true only as an explicit temporary override." }}
+{{- end }}
 data:
-  # Legacy env vars for backward compatibility (worker not yet migrated to Postgres)
-  # Point to non-existent services - will fail at runtime until worker is updated
+  # Legacy env vars for temporary migration mode (explicit opt-in required)
+  # These localhost endpoints are intentionally temporary and not production-safe.
   REDIS_URL: "redis://localhost:6379"
   QDRANT_URL: "http://localhost:6333"
   NEO4J_URL: "bolt://localhost:7687"

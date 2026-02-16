@@ -67,6 +67,11 @@ postgres:
   service:
     port: 5432
 
+# Temporary migration controls while API/worker images are being moved to Postgres.
+# Explicit opt-in prevents shipping chart defaults that appear compatible but fail at runtime.
+migration:
+  allowBrokenLegacyRuntime: false
+
 ollama:
   enabled: true
   image: ollama/ollama:latest

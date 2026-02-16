@@ -67,8 +67,8 @@ ENRICHMENT_ENABLED=false
 
 # New (optional, SeaweedFS S3)
 BLOB_STORE_URL=http://localhost:8333
-BLOB_STORE_ACCESS_KEY=minioadmin
-BLOB_STORE_SECRET_KEY=minioadmin
+BLOB_STORE_ACCESS_KEY=<seaweedfs-access-key>
+BLOB_STORE_SECRET_KEY=<seaweedfs-secret-key>
 BLOB_STORE_BUCKET=rag-raw
 BLOB_STORE_THRESHOLD_BYTES=10485760
 
@@ -298,9 +298,9 @@ Worker behavior: if this returns zero rows, sleep 1 s before retrying to avoid b
 ### Blob storage behavior
 
 - Files with size `<= BLOB_STORE_THRESHOLD_BYTES` stay in Postgres-only flow.
-- Files with size `> BLOB_STORE_THRESHOLD_BYTES` store raw content in MinIO with key `documents/{documents.id}/raw` (or extension variant) and persist key/size in `documents.raw_key` and `documents.raw_bytes`.
+- Files with size `> BLOB_STORE_THRESHOLD_BYTES` store raw content in SeaweedFS (S3 API) with key `documents/{documents.id}/raw` (or extension variant) and persist key/size in `documents.raw_key` and `documents.raw_bytes`.
 - Deleting a document must first delete its blob object (if present), then delete the `documents` row.
-- A periodic orphan cleanup job can remove MinIO objects with no matching `documents.raw_key`. Frequency and mechanism are implementation details — a daily cron or CLI subcommand is sufficient.
+- A periodic orphan cleanup job can remove SeaweedFS objects with no matching `documents.raw_key`. Frequency and mechanism are implementation details — a daily cron or CLI subcommand is sufficient.
 
 ---
 
@@ -339,7 +339,7 @@ Worker behavior: if this returns zero rows, sleep 1 s before retrying to avoid b
 - `cli/src/commands/query.ts` — Pass filter params as plain objects
 
 **Infrastructure — Modify:**
-- `docker-compose.yml` — Replace qdrant + redis + neo4j with postgres + optional minio
+- `docker-compose.yml` — Replace qdrant + redis + neo4j with postgres + optional seaweedfs
 - `.env.example` — DATABASE_URL replaces 6+ env vars
 - `chart/templates/` — Delete qdrant/redis/neo4j YAMLs, add postgres-*.yaml
 - `chart/values.yaml` — Postgres config block replaces three

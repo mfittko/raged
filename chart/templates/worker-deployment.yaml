@@ -74,9 +74,8 @@ spec:
                   import sys
                   # Verify critical imports work (worker dependencies)
                   try:
-                      import asyncio
-                      import os
-                      # Process is alive and can import core dependencies
+                      import src.db
+                      # Process is alive and worker dependencies import correctly
                       sys.exit(0)
                   except Exception as e:
                       # Import failure suggests corrupted environment

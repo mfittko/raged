@@ -42,7 +42,12 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
-          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d/01-enable-pgvector.sql
+              subPath: 01-enable-pgvector.sql
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "{{ .Values.postgres.user }}"]
@@ -53,6 +58,10 @@ spec:
               command: ["pg_isready", "-U", "{{ .Values.postgres.user }}"]
             initialDelaySeconds: 30
             periodSeconds: 10
+      volumes:
+        - name: init-sql
+          configMap:
+            name: {{ .Release.Name }}-postgres-init
   volumeClaimTemplates:
     - metadata: { name: data }
       spec:
