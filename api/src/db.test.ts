@@ -9,7 +9,7 @@ describe("db module", () => {
 
   beforeAll(() => {
     if (!process.env.DATABASE_URL) {
-      process.env.DATABASE_URL = "postgresql://localhost:5432/ragstack";
+      process.env.DATABASE_URL = "postgresql://localhost:5432/raged";
       delete process.env.ALLOW_DEV_DB;
     }
   });
