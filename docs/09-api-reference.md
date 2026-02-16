@@ -427,6 +427,6 @@ GET /graph/entity/AuthService
 | `documents` | array | Documents that mention this entity |
 
 **Error Responses:**
-- `503` - Graph functionality is not enabled (enrichment not configured)
+- `503` - Graph functionality is not enabled (entity relationships require enrichment to be enabled)
 - `404` - Entity not found in the graph
 
