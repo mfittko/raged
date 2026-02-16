@@ -103,13 +103,13 @@ Enrichment is enabled via Docker Compose profiles. To customize enrichment behav
 ```yaml
 environment:
   ENRICHMENT_ENABLED: "true"  # Enable enrichment features
-  DATABASE_URL: "postgresql://user:password@postgres:5432/raged"  # Postgres connection
+  DATABASE_URL: "postgresql://raged:password@postgres:5432/raged"  # Postgres connection
 ```
 
 **Worker service:**
 ```yaml
 environment:
-  DATABASE_URL: "postgresql://user:password@postgres:5432/raged"
+  DATABASE_URL: "postgresql://raged:password@postgres:5432/raged"
   OLLAMA_URL: "http://ollama:11434"
   WORKER_CONCURRENCY: "4"  # Number of concurrent tasks
   EXTRACTOR_PROVIDER: "ollama"  # Options: ollama, anthropic, openai
@@ -135,7 +135,7 @@ For hot-reload during API development:
 ```bash
 cd api
 npm install
-DATABASE_URL=postgresql://user:password@localhost:5432/raged OLLAMA_URL=http://localhost:11434 npm run dev
+DATABASE_URL=postgresql://raged:password@localhost:5432/raged OLLAMA_URL=http://localhost:11434 npm run dev
 ```
 
 This runs the API directly on your machine while Postgres and Ollama run in Docker.
