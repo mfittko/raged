@@ -78,7 +78,7 @@ Holds enrichment tasks using a Postgres table with SKIP LOCKED for concurrent pr
 
 Stores entities and relationships extracted from documents in Postgres tables. Supports graph traversal for hybrid vector+graph retrieval.
 
-Tables: `entities` (with columns: name, type, description), `relationships` (with source, target, relationship type)
+Database schema includes: `entities` table (with columns: name, type, description), `relationships` table (with source, target, relationship type)
 Relationship types: Configurable based on extraction (e.g., `uses`, `relates_to`, `mentions`)
 
 ### Enrichment Worker (Python)
