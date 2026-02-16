@@ -1,10 +1,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { getPool, query, runMigrations, closePool } from "./db.js";
 
-const hasDbConfig = Boolean(process.env.DATABASE_URL) || process.env.ALLOW_DEV_DB === "true";
-const describeDb = hasDbConfig ? describe : describe.skip;
-
-describeDb("db module", () => {
+describe("db module", () => {
 
   afterAll(async () => {
     await closePool();
