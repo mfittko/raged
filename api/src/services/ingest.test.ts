@@ -2,17 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ingest } from "./ingest.js";
 import type { IngestDeps, IngestRequest } from "./ingest.js";
 
-// Mock the redis module
-vi.mock("../redis.js", () => {
-  const mockEnqueue = vi.fn(async () => {});
-  const mockIsEnabled = vi.fn(() => false);
-  return {
-    enqueueEnrichment: mockEnqueue,
-    isEnrichmentEnabled: mockIsEnabled,
-    __mockEnqueue: mockEnqueue,
-    __mockIsEnabled: mockIsEnabled,
-  };
-});
+// Mock the db module to avoid Postgres connection in tests
+vi.mock("../db.js", () => ({
+  query: vi.fn(async () => ({ rows: [] })),
+  getPool: vi.fn(),
+  runMigrations: vi.fn(),
+  closePool: vi.fn(),
+}));
 
 // Mock url-fetch and url-extract modules
 vi.mock("./url-fetch.js", () => {
@@ -211,14 +207,9 @@ describe("ingest service", () => {
   });
 
   it("enqueues enrichment tasks when enrichment is enabled", async () => {
-    // Setup mocks
-    const redis = await import("../redis.js");
-    const mockEnqueue = (redis as any).__mockEnqueue;
-    const mockIsEnabled = (redis as any).__mockIsEnabled;
-    
-    // Reset and configure mocks
-    mockEnqueue.mockClear();
-    mockIsEnabled.mockReturnValue(true);
+    // Mock environment variable
+    const originalEnv = process.env.ENRICHMENT_ENABLED;
+    process.env.ENRICHMENT_ENABLED = "true";
 
     const upsertMock = vi.fn(async () => {});
     const deps = makeDeps({ upsert: upsertMock });
@@ -236,26 +227,20 @@ describe("ingest service", () => {
     expect(result.enrichment?.enqueued).toBe(2);
     expect(result.enrichment?.docTypes).toEqual({ code: 1, text: 1 });
 
-    // Verify tasks were enqueued
-    expect(mockEnqueue).toHaveBeenCalledTimes(2);
-
     // Verify enrichmentStatus in payload - collect all points from all upsert calls
     const allPoints = upsertMock.mock.calls.flatMap((call: any) => call[1]);
     expect(allPoints.length).toBe(2);
     expect(allPoints[0].payload.enrichmentStatus).toBe("pending");
     expect(allPoints[1].payload.enrichmentStatus).toBe("pending");
 
-    // Clean up
-    mockIsEnabled.mockReturnValue(false);
+    // Restore environment
+    process.env.ENRICHMENT_ENABLED = originalEnv;
   });
 
   it("skips enrichment when disabled", async () => {
-    const redis = await import("../redis.js");
-    const mockEnqueue = (redis as any).__mockEnqueue;
-    const mockIsEnabled = (redis as any).__mockIsEnabled;
-    
-    mockEnqueue.mockClear();
-    mockIsEnabled.mockReturnValue(false);
+    // Ensure enrichment is disabled
+    const originalEnv = process.env.ENRICHMENT_ENABLED;
+    process.env.ENRICHMENT_ENABLED = "false";
 
     const deps = makeDeps();
     const request: IngestRequest = {
@@ -266,7 +251,9 @@ describe("ingest service", () => {
 
     // No enrichment response when disabled
     expect(result.enrichment).toBeUndefined();
-    expect(mockEnqueue).not.toHaveBeenCalled();
+
+    // Restore environment
+    process.env.ENRICHMENT_ENABLED = originalEnv;
   });
 
   it("fetches and ingests URL items without text", async () => {

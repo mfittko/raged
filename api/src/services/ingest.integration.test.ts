@@ -7,10 +7,12 @@ import { validateIngestRequest } from "./ingest-validation.js";
 import { ingestSchema } from "../schemas.js";
 import type { IngestRequest, IngestDeps } from "./ingest.js";
 
-// Mock the redis module
-vi.mock("../redis.js", () => ({
-  enqueueEnrichment: vi.fn(async () => {}),
-  isEnrichmentEnabled: vi.fn(() => false),
+// Mock the db module to avoid Postgres connection in tests
+vi.mock("../db.js", () => ({
+  query: vi.fn(async () => ({ rows: [] })),
+  getPool: vi.fn(),
+  runMigrations: vi.fn(),
+  closePool: vi.fn(),
 }));
 
 // Mock url-fetch and url-extract modules
@@ -970,8 +972,8 @@ describe("ingest integration tests", () => {
     });
 
     it("URL ingestion with enrichment enabled → enrichment metadata added", async () => {
-      const { isEnrichmentEnabled } = await import("../redis.js");
-      vi.mocked(isEnrichmentEnabled).mockReturnValue(true);
+      const originalEnv = process.env.ENRICHMENT_ENABLED;
+      process.env.ENRICHMENT_ENABLED = "true";
 
       mockFetchUrls.mockResolvedValue({
         results: new Map([
@@ -1014,8 +1016,8 @@ describe("ingest integration tests", () => {
       const points = getUpsertedPoints(upsertMock);
       expect(points[0].payload.enrichmentStatus).toBe("pending");
 
-      // Restore mock
-      vi.mocked(isEnrichmentEnabled).mockReturnValue(false);
+      // Restore environment
+      process.env.ENRICHMENT_ENABLED = originalEnv;
 
       await app.close();
     });

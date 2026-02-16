@@ -5,14 +5,23 @@ import { extractTier1 } from "../extractors/index.js";
 import type { EnrichmentTask } from "../types.js";
 import { fetchUrls } from "./url-fetch.js";
 import { extractContentAsync } from "./url-extract.js";
+import { query } from "../db.js";
 
-// Temporary stubs for enrichment - will be replaced with Postgres implementation
+// Enrichment functions using Postgres task_queue
 function isEnrichmentEnabled(): boolean {
-  return false;
+  return process.env.ENRICHMENT_ENABLED === "true";
 }
 
-async function enqueueEnrichment(_task: EnrichmentTask): Promise<void> {
-  // Stub - enrichment disabled during migration
+async function enqueueEnrichment(task: EnrichmentTask): Promise<void> {
+  if (!isEnrichmentEnabled()) {
+    return;
+  }
+  
+  await query(
+    `INSERT INTO task_queue (queue, status, payload, run_after)
+     VALUES ($1, $2, $3, $4)`,
+    ["enrichment", "pending", JSON.stringify(task), new Date()]
+  );
 }
 
 export interface IngestRequest {
