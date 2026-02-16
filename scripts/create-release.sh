@@ -134,6 +134,8 @@ PRERELEASE=false
 DRY_RUN=false
 OPENAI_MAX_RETRIES="${OPENAI_MAX_RETRIES:-3}"
 OPENAI_BACKOFF_BASE_SECONDS="${OPENAI_BACKOFF_BASE_SECONDS:-2}"
+OPENAI_MAX_OUTPUT_TOKENS="${OPENAI_MAX_OUTPUT_TOKENS:-2200}"
+OPENAI_MAX_OUTPUT_TOKENS_CAP="${OPENAI_MAX_OUTPUT_TOKENS_CAP:-8000}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -344,22 +346,24 @@ Apply source-priority exactly as specified in the system prompt.
 If "Changelog entries matching release-scope PRs" is not "none", prioritize those entries over broader changelog context.
 EOF
 
-PAYLOAD=$(jq -n \
-  --arg model "$MODEL" \
-  --arg system "$SYSTEM_PROMPT" \
-  --arg user "$USER_PROMPT" \
-  '{
-    model: $model,
-    instructions: $system,
-    input: $user,
-    max_output_tokens: 2200,
-    text: { format: { type: "json_object" } }
-  }')
-
 RESPONSE=""
 CONTENT=""
 ATTEMPT=1
+REQUEST_MAX_OUTPUT_TOKENS="$OPENAI_MAX_OUTPUT_TOKENS"
 while [[ "$ATTEMPT" -le "$OPENAI_MAX_RETRIES" ]]; do
+  PAYLOAD=$(jq -n \
+    --arg model "$MODEL" \
+    --arg system "$SYSTEM_PROMPT" \
+    --arg user "$USER_PROMPT" \
+    --argjson max_output_tokens "$REQUEST_MAX_OUTPUT_TOKENS" \
+    '{
+      model: $model,
+      instructions: $system,
+      input: $user,
+      max_output_tokens: $max_output_tokens,
+      text: { format: { type: "json_object" } }
+    }')
+
   if ! RESPONSE=$(curl -sS -X POST "https://api.openai.com/v1/responses" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${OPENAI_API_KEY}" \
@@ -368,6 +372,18 @@ while [[ "$ATTEMPT" -le "$OPENAI_MAX_RETRIES" ]]; do
   elif [[ "$(echo "$RESPONSE" | jq -r '.error.message // empty')" != "" ]]; then
     echo "Attempt ${ATTEMPT}/${OPENAI_MAX_RETRIES}: OpenAI API error: $(echo "$RESPONSE" | jq -r '.error.message // "unknown"')" >&2
   else
+    INCOMPLETE_REASON=$(echo "$RESPONSE" | jq -r '.incomplete_details.reason // empty')
+    if [[ "$INCOMPLETE_REASON" == "max_output_tokens" ]]; then
+      NEXT_MAX=$((REQUEST_MAX_OUTPUT_TOKENS * 2))
+      if [[ "$NEXT_MAX" -gt "$OPENAI_MAX_OUTPUT_TOKENS_CAP" ]]; then
+        NEXT_MAX="$OPENAI_MAX_OUTPUT_TOKENS_CAP"
+      fi
+      if [[ "$NEXT_MAX" -gt "$REQUEST_MAX_OUTPUT_TOKENS" ]]; then
+        echo "Attempt ${ATTEMPT}/${OPENAI_MAX_RETRIES}: response hit max_output_tokens (${REQUEST_MAX_OUTPUT_TOKENS}); next retry will use ${NEXT_MAX}" >&2
+        REQUEST_MAX_OUTPUT_TOKENS="$NEXT_MAX"
+      fi
+    fi
+
     CONTENT=$(extract_response_content "$RESPONSE")
     if [[ -z "$CONTENT" || "$CONTENT" == "null" ]]; then
       echo "Attempt ${ATTEMPT}/${OPENAI_MAX_RETRIES}: empty response content from OpenAI" >&2
