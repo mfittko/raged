@@ -1,12 +1,12 @@
 ---
-name: rag-stack
+name: raged
 description: >
-  Store and retrieve knowledge using rag-stack semantic search with enrichment and knowledge graph.
+  Store and retrieve knowledge using raged semantic search with enrichment and knowledge graph.
   Ingest any content — code, docs, PDFs, images, articles, emails, transcripts, notes — and query
   by natural language. Supports async metadata extraction, entity/relationship tracking, and hybrid
   vector+graph retrieval. Use when the user needs grounded context from their knowledge base.
 version: 1.0.0
-compatibility: Requires curl and a running rag-stack instance (Docker Compose or Kubernetes)
+compatibility: Requires curl and a running raged instance (Docker Compose or Kubernetes)
 metadata:
   openclaw:
     emoji: "magnifying_glass"
@@ -15,19 +15,19 @@ metadata:
         - curl
         - jq
       env:
-        - RAG_STACK_URL
-    primaryEnv: RAG_STACK_URL
+        - RAGED_URL
+    primaryEnv: RAGED_URL
     config:
       apiToken:
-        description: "Bearer token for rag-stack API authentication (optional if auth is disabled)"
+        description: "Bearer token for raged API authentication (optional if auth is disabled)"
         secret: true
 ---
 
-# rag-stack — Semantic Knowledge Base with Enrichment & Graph
+# raged — Semantic Knowledge Base with Enrichment & Graph
 
 Store any content and retrieve it via natural-language queries, enriched with metadata extraction and knowledge graph relationships.
 
-rag-stack chunks text, embeds it with a local model (Ollama + nomic-embed-text), stores vectors in Qdrant, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds a Neo4j knowledge graph for entity-aware retrieval.
+raged chunks text, embeds it with a local model (Ollama + nomic-embed-text), stores vectors in Qdrant, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds a Neo4j knowledge graph for entity-aware retrieval.
 
 Content types: source code, markdown docs, blog articles, email threads, PDFs, images, YouTube transcripts, meeting notes, Slack exports, or any text.
 
@@ -35,12 +35,12 @@ Content types: source code, markdown docs, blog articles, email threads, PDFs, i
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `RAG_STACK_URL` | Base URL of the rag-stack API | `http://localhost:8080` |
+| `RAG_STACK_URL` | Base URL of the raged API | `http://localhost:8080` |
 | `RAG_STACK_TOKEN` | Bearer token (omit if auth is disabled) | `my-secret-token` |
 
 ## Pre-flight: Check Connection
 
-Before running queries or indexing, verify rag-stack is reachable:
+Before running queries or indexing, verify raged is reachable:
 
 ```bash
 curl -sf "$RAG_STACK_URL/healthz" | jq .
@@ -74,7 +74,7 @@ curl -s -X POST "$RAG_STACK_URL/query" \
   }' | jq '.results[] | {score, source, text: (.text | .[0:200])}'
 ```
 
-Omit the `Authorization` header if rag-stack has no token configured.
+Omit the `Authorization` header if raged has no token configured.
 
 Works for any content type — code, docs, articles, transcripts:
 
@@ -215,7 +215,7 @@ Results are ordered by similarity score (highest first). `score` ranges 0.0–1.
 
 ## Ingesting Content
 
-Ingest any text into the knowledge base. rag-stack chunks it, embeds each chunk, and stores vectors in Qdrant.
+Ingest any text into the knowledge base. raged chunks it, embeds each chunk, and stores vectors in Qdrant.
 
 ### Via the API (any text content)
 
@@ -247,7 +247,7 @@ You can ingest multiple items in a single request. Use any metadata keys that he
 
 ### Via the CLI (bulk Git repository indexing)
 
-For indexing entire Git repositories, the CLI automates cloning, scanning, batching, and filtering. From the rag-stack repo:
+For indexing entire Git repositories, the CLI automates cloning, scanning, batching, and filtering. From the raged repo:
 
 ```bash
 cd cli && npm install && npm run build
@@ -264,7 +264,7 @@ node dist/index.js index \
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--repo`, `-r` | string | **required** | Git URL to clone |
-| `--api` | string | `http://localhost:8080` | rag-stack API URL |
+| `--api` | string | `http://localhost:8080` | raged API URL |
 | `--collection` | string | `docs` | Target Qdrant collection |
 | `--branch` | string | _(default)_ | Branch to clone |
 | `--repoId` | string | _(repo URL)_ | Stable identifier for the repo |
@@ -314,7 +314,7 @@ Supported file types: text, code, PDFs (extracted text), images (base64 + EXIF m
 
 ## Enrichment
 
-When enrichment is enabled (Redis + Neo4j + worker running), rag-stack performs async metadata extraction:
+When enrichment is enabled (Redis + Neo4j + worker running), raged performs async metadata extraction:
 
 - **Tier-1** (sync): Heuristic/AST/EXIF extraction during ingest
 - **Tier-2** (async): spaCy NER, keyword extraction, language detection
@@ -387,7 +387,7 @@ node dist/index.js enrich --force \
 
 ## Knowledge Graph
 
-When Neo4j is enabled, rag-stack builds a knowledge graph of entities and relationships extracted from documents.
+When Neo4j is enabled, raged builds a knowledge graph of entities and relationships extracted from documents.
 
 ### Query Entity
 
@@ -446,5 +446,5 @@ Description: Handles user authentication
 | `200` | Success | Parse JSON response |
 | `401` | Unauthorized | Check `RAG_STACK_TOKEN` is set correctly |
 | `400` | Bad request | Check required fields (`query` for /query, `items` for /ingest) |
-| `5xx` | Server error | Check rag-stack logs: `docker compose logs api` |
+| `5xx` | Server error | Check raged logs: `docker compose logs api` |
 | Connection refused | Stack not running | Start with `docker compose up -d` |

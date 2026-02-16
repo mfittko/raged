@@ -1,4 +1,4 @@
-# rag-stack API Reference
+# raged API Reference
 
 Detailed reference for advanced usage. The agent loads this on demand for complex scenarios.
 
@@ -94,7 +94,7 @@ Embeds query text, performs vector similarity search.
 
 | Service | Default URL | Purpose |
 |---------|------------|---------|
-| rag-stack API | `http://localhost:8080` | HTTP gateway |
+| raged API | `http://localhost:8080` | HTTP gateway |
 | Qdrant | `http://localhost:6333` | Vector database |
 | Ollama | `http://localhost:11434` | Embedding model |
 

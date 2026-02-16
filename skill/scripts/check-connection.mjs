@@ -2,11 +2,11 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /**
- * Pre-flight check: verifies rag-stack is running and responsive.
+ * Pre-flight check: verifies raged is running and responsive.
  * Used by the OpenClaw agent before issuing query/index commands.
  *
  * Usage: node check-connection.mjs [url]
- *   url defaults to RAG_STACK_URL env var, then http://localhost:8080
+ *   url defaults to RAGED_URL env var, then http://localhost:8080
  */
 
 export async function checkConnection(url, fetchFn = fetch) {
@@ -39,7 +39,7 @@ const entryUrl = entryArg ? pathToFileURL(resolve(entryArg)).href : "";
 const isMain = import.meta.url === entryUrl;
 
 if (isMain) {
-  const url = process.argv[2] || process.env.RAG_STACK_URL || "http://localhost:8080";
+  const url = process.argv[2] || process.env.RAGED_URL || "http://localhost:8080";
   const result = await checkConnection(url);
   console.log(JSON.stringify(result, null, 2));
   process.exit(result.ok ? 0 : 1);

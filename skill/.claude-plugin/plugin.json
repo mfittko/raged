@@ -1,11 +1,11 @@
 {
-  "name": "rag-stack",
+  "name": "raged",
   "description": "Semantic knowledge base - ingest any text and query it by natural language",
   "version": "0.1.0",
   "author": {
     "name": "Manuel Fittko"
   },
-  "repository": "https://github.com/mfittko/rag-stack",
+  "repository": "https://github.com/mfittko/raged",
   "license": "MIT",
   "keywords": ["rag", "semantic-search", "knowledge-base", "embeddings", "qdrant"]
 }

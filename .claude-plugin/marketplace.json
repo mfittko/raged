@@ -1,5 +1,5 @@
 {
-  "name": "rag-stack",
+  "name": "raged",
   "version": "1.0.0",
   "description": "Semantic knowledge base - ingest any text and query it by natural language",
   "owner": {
@@ -7,7 +7,7 @@
   },
   "plugins": [
     {
-      "name": "rag-stack",
+      "name": "raged",
       "description": "Store and retrieve knowledge using semantic search over any text content",
       "version": "0.1.0",
       "source": "./skill",

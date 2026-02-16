@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { checkConnection } from "./check-connection.mjs";
 
 describe("checkConnection", () => {
-  it("returns ok when rag-stack health endpoint responds 200", async () => {
+  it("returns ok when raged health endpoint responds 200", async () => {
     const mockFetch = async (url) => {
       assert.match(url, /\/healthz$/);
       return { ok: true, json: async () => ({ ok: true }) };

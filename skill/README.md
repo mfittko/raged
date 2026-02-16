@@ -38,7 +38,7 @@ Add to `~/.openclaw/openclaw.json`:
 }
 ```
 
-Set `RAG_STACK_TOKEN` only if your rag-stack instance has `RAG_API_TOKEN` configured.
+Set `RAG_STACK_TOKEN` only if your rag-stack instance has `RAGED_API_TOKEN` configured.
 
 ## Prerequisites
 
