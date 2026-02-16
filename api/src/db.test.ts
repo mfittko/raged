@@ -37,8 +37,10 @@ describe("db module", () => {
   it("runMigrations is idempotent", async () => {
     if (!process.env.DATABASE_URL) return;
     await runMigrations();
+    const beforeCount = await query("SELECT COUNT(*) as count FROM schema_migrations");
     await runMigrations();
-    // Should not throw, migrations already applied
-    expect(true).toBe(true);
+    const afterCount = await query("SELECT COUNT(*) as count FROM schema_migrations");
+    // Should not create duplicate migration entries
+    expect(afterCount.rows[0].count).toBe(beforeCount.rows[0].count);
   });
 });

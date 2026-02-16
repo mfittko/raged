@@ -86,7 +86,8 @@ CREATE TABLE chunks (
 );
 
 CREATE INDEX idx_chunks_embedding ON chunks
-    USING hnsw (embedding vector_cosine_ops);
+    USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 CREATE INDEX idx_chunks_document_id ON chunks (document_id);
 CREATE INDEX idx_chunks_enrichment_status ON chunks (enrichment_status);
 CREATE INDEX idx_chunks_repo_id ON chunks (repo_id);
