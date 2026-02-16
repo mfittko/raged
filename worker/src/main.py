@@ -3,7 +3,7 @@ import logging
 import os
 import time
 
-from src import db
+from src import api_client
 from src.config import MAX_RETRIES, QUEUE_NAME, WORKER_CONCURRENCY
 from src.pipeline import process_task
 
@@ -18,7 +18,7 @@ async def process_task_with_retry(task: dict) -> None:
     """Process a task with retry logic and dead-letter handling.
 
     Args:
-        task: Task dictionary from database
+        task: Task dictionary from API
     """
     task_id = task.get("taskId", "unknown")
     attempt = task.get("attempt", 1)
@@ -31,9 +31,6 @@ async def process_task_with_retry(task: dict) -> None:
 
         elapsed_ms = int((time.time() - start_time) * 1000)
 
-        # Mark as completed
-        await db.complete_task(task_id)
-
         # Log structured completion event
         logger.info(
             f"enrichment_complete taskId={task_id} baseId={task.get('baseId')} "
@@ -45,16 +42,16 @@ async def process_task_with_retry(task: dict) -> None:
         error_msg = str(e)
         logger.error(f"Task {task_id} failed (attempt {attempt}/{MAX_RETRIES}): {error_msg}")
 
-        # Fail task - will retry or mark as dead based on attempt count
-        await db.fail_task(task_id, error_msg, attempt, MAX_RETRIES)
+        # Report failure to API - API handles retry/dead-letter logic
+        await api_client.fail_task(task_id, error_msg)
 
 
 async def worker_task() -> None:
-    """Worker task that processes items from the queue using SKIP LOCKED polling."""
+    """Worker task that processes items from the queue using HTTP polling."""
     while True:
         try:
-            # Try to dequeue a task
-            task = await db.dequeue_task(WORKER_ID)
+            # Try to claim a task via HTTP
+            task = await api_client.claim_task(WORKER_ID)
 
             if task is None:
                 # No tasks available - sleep to avoid busy-looping
@@ -75,7 +72,7 @@ async def watchdog_task() -> None:
     while True:
         try:
             await asyncio.sleep(60)
-            await db.recover_stale_leases()
+            await api_client.recover_stale()
         except Exception as e:
             logger.error(f"Error in watchdog task: {e}", exc_info=True)
 
@@ -104,7 +101,7 @@ async def worker_loop() -> None:
         # Wait for cancellation to complete
         await asyncio.gather(*workers, watchdog, return_exceptions=True)
     finally:
-        await db.close_pool()
+        await api_client.close_client()
 
 
 def main():

@@ -6,8 +6,6 @@ requires-python = ">=3.12,<3.13"
 # NOTE: Dependencies are declared here for tooling and local development.
 # Docker/CI use requirements*.lock files (generated with pip-compile) as the canonical source.
 dependencies = [
-    "asyncpg~=0.30.0",
-    "pgvector~=0.4.2",
     "spacy~=3.8.11",
     "pytextrank~=3.3.0",
     "langdetect~=1.0.9",
