@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 const { Pool } = pg;
 
-const DATABASE_URL = process.env.DATABASE_URL || "postgresql://rag:rag@localhost:5432/ragstack";
+const DATABASE_URL = process.env.DATABASE_URL || "postgresql://localhost:5432/ragstack";
 
 let pool: pg.Pool | null = null;
 
@@ -26,7 +26,11 @@ export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   return client.query<T>(text, params);
 }
 
-export async function runMigrations(): Promise<void> {
+export interface RunMigrationsOptions {
+  log?: (message: string) => void;
+}
+
+export async function runMigrations(options?: RunMigrationsOptions): Promise<void> {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
   const migrationsDir = join(__dirname, "..", "migrations");
@@ -39,21 +43,11 @@ export async function runMigrations(): Promise<void> {
     );
   `);
 
-  // Get applied migrations
-  const result = await query<{ version: string }>(
-    "SELECT version FROM schema_migrations ORDER BY version"
-  );
-  const appliedMigrations = new Set(result.rows.map((r) => r.version));
-
   // Migration files to run
   const migrations = ["001_initial.sql"];
 
   for (const migrationFile of migrations) {
     const version = migrationFile.replace(".sql", "");
-    
-    if (appliedMigrations.has(version)) {
-      continue;
-    }
 
     const migrationPath = join(migrationsDir, migrationFile);
     const sql = await readFile(migrationPath, "utf-8");
@@ -62,13 +56,25 @@ export async function runMigrations(): Promise<void> {
     const client = await getPool().connect();
     try {
       await client.query("BEGIN");
-      await client.query(sql);
-      await client.query(
-        "INSERT INTO schema_migrations (version) VALUES ($1)",
+
+      const insertResult = await client.query<{ version: string }>(
+        `
+          INSERT INTO schema_migrations (version)
+          VALUES ($1)
+          ON CONFLICT (version) DO NOTHING
+          RETURNING version
+        `,
         [version]
       );
+
+      if (insertResult.rowCount === 0) {
+        await client.query("COMMIT");
+        continue;
+      }
+
+      await client.query(sql);
       await client.query("COMMIT");
-      console.log(`Applied migration: ${migrationFile}`);
+      options?.log?.(`Applied migration: ${migrationFile}`);
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

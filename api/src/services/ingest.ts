@@ -12,15 +12,26 @@ function isEnrichmentEnabled(): boolean {
   return process.env.ENRICHMENT_ENABLED === "true";
 }
 
-async function enqueueEnrichment(task: EnrichmentTask): Promise<void> {
-  if (!isEnrichmentEnabled()) {
+async function enqueueEnrichmentBatch(tasks: EnrichmentTask[]): Promise<void> {
+  if (!isEnrichmentEnabled() || tasks.length === 0) {
     return;
   }
-  
+
+  const now = new Date();
+  const values: unknown[] = [];
+  const rowsSql: string[] = [];
+
+  for (let index = 0; index < tasks.length; index++) {
+    const task = tasks[index];
+    const base = index * 4;
+    rowsSql.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`);
+    values.push("enrichment", "pending", JSON.stringify(task), now);
+  }
+
   await query(
     `INSERT INTO task_queue (queue, status, payload, run_after)
-     VALUES ($1, $2, $3, $4)`,
-    ["enrichment", "pending", JSON.stringify(task), new Date()]
+     VALUES ${rowsSql.join(", ")}`,
+    values
   );
 }
 
@@ -301,10 +312,10 @@ export async function ingest(
       }
     }
 
-    // Batch enqueue tasks in groups to avoid overwhelming Redis
+    // Batch enqueue tasks in groups to avoid overwhelming the database
     for (let i = 0; i < tasks.length; i += TASK_BATCH_SIZE) {
       const batch = tasks.slice(i, i + TASK_BATCH_SIZE);
-      await Promise.all(batch.map(task => enqueueEnrichment(task)));
+      await enqueueEnrichmentBatch(batch);
     }
 
     const result: IngestResult = {

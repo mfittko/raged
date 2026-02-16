@@ -7,7 +7,7 @@ const app = buildApp();
 // Run database migrations on startup
 async function init() {
   try {
-    await runMigrations();
+    await runMigrations({ log: (message) => app.log.info(message) });
     app.log.info("Database migrations completed");
   } catch (err) {
     app.log.error({ err }, "Failed to run database migrations");

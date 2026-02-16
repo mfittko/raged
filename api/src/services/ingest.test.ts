@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ingest } from "./ingest.js";
 import type { IngestDeps, IngestRequest } from "./ingest.js";
+import { query as dbQuery } from "../db.js";
 
 // Mock the db module to avoid Postgres connection in tests
 vi.mock("../db.js", () => ({
@@ -39,6 +40,10 @@ function makeDeps(overrides?: Partial<IngestDeps>): IngestDeps {
 }
 
 describe("ingest service", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("ensures the collection exists before upserting", async () => {
     const deps = makeDeps();
     const request: IngestRequest = {
@@ -232,6 +237,12 @@ describe("ingest service", () => {
     expect(allPoints.length).toBe(2);
     expect(allPoints[0].payload.enrichmentStatus).toBe("pending");
     expect(allPoints[1].payload.enrichmentStatus).toBe("pending");
+
+    const queryMock = vi.mocked(dbQuery);
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    const [sql, params] = queryMock.mock.calls[0];
+    expect(sql).toContain("INSERT INTO task_queue");
+    expect(params).toHaveLength(8);
 
     // Restore environment
     process.env.ENRICHMENT_ENABLED = originalEnv;
