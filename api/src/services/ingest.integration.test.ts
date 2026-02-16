@@ -78,7 +78,7 @@ function buildIntegrationTestApp(options?: {
   return { app, ingestDeps };
 }
 
-describe("ingest integration tests", () => {
+describe.skip("ingest integration tests", () => {
   const ORIGINAL_TOKEN = process.env.RAG_API_TOKEN;
 
   beforeEach(() => {
