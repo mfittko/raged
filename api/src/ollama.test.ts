@@ -5,13 +5,20 @@ const originalFetch = globalThis.fetch;
 
 describe("embed", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
+  const originalOllamaUrl = process.env.OLLAMA_URL;
 
   beforeEach(() => {
+    process.env.OLLAMA_URL = "http://localhost:11434";
     fetchMock = vi.fn();
     globalThis.fetch = fetchMock as any;
   });
 
   afterEach(() => {
+    if (originalOllamaUrl === undefined) {
+      delete process.env.OLLAMA_URL;
+    } else {
+      process.env.OLLAMA_URL = originalOllamaUrl;
+    }
     globalThis.fetch = originalFetch;
   });
 

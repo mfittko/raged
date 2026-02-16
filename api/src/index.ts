@@ -12,9 +12,11 @@ const PORT = Number(process.env.PORT || "8080");
 export function validateConfig(): string[] {
   const errors: string[] = [];
 
-  // DATABASE_URL is required (unless ALLOW_DEV_DB is set for local dev)
+  // DATABASE_URL is required (unless ALLOW_DEV_DB is set for local dev fallback)
   if (!process.env.DATABASE_URL && process.env.ALLOW_DEV_DB !== "true") {
-    errors.push("DATABASE_URL is required. Set DATABASE_URL or set ALLOW_DEV_DB=true for local development.");
+    errors.push(
+      "DATABASE_URL is required. Set DATABASE_URL (e.g., postgresql://localhost:5432/raged) or set ALLOW_DEV_DB=true for local development."
+    );
   }
 
   // OLLAMA_URL is required for embedding generation
@@ -22,9 +24,9 @@ export function validateConfig(): string[] {
     errors.push("OLLAMA_URL is required for embedding generation (e.g., http://localhost:11434)");
   }
 
-  // QDRANT_URL is required while legacy vector path is active
-  if (!process.env.QDRANT_URL) {
-    errors.push("QDRANT_URL is required for vector storage (e.g., http://localhost:6333)");
+  // QDRANT_URL is required only for the legacy vector path
+  if (process.env.LEGACY_QDRANT_VECTOR_ENABLED === "true" && !process.env.QDRANT_URL) {
+    errors.push("QDRANT_URL is required for legacy Qdrant vector storage (e.g., http://localhost:6333)");
   }
 
   return errors;
@@ -60,8 +62,7 @@ const entrypointPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
 if (entrypointPath && fileURLToPath(import.meta.url) === entrypointPath) {
   init()
     .then((app) => app.listen({ port: PORT, host: "0.0.0.0" }))
-    .catch((err) => {
-      console.error(err);
+    .catch(() => {
       process.exit(1);
     });
 }

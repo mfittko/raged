@@ -7,6 +7,7 @@ describe("validateConfig", () => {
     OLLAMA_URL: process.env.OLLAMA_URL,
     QDRANT_URL: process.env.QDRANT_URL,
     ALLOW_DEV_DB: process.env.ALLOW_DEV_DB,
+    LEGACY_QDRANT_VECTOR_ENABLED: process.env.LEGACY_QDRANT_VECTOR_ENABLED,
   };
 
   afterEach(() => {
@@ -24,7 +25,7 @@ describe("validateConfig", () => {
     delete process.env.DATABASE_URL;
     delete process.env.ALLOW_DEV_DB;
     process.env.OLLAMA_URL = "http://localhost:11434";
-    process.env.QDRANT_URL = "http://localhost:6333";
+    delete process.env.LEGACY_QDRANT_VECTOR_ENABLED;
 
     const errors = validateConfig();
     expect(errors.length).toBeGreaterThan(0);
@@ -35,7 +36,7 @@ describe("validateConfig", () => {
     delete process.env.DATABASE_URL;
     process.env.ALLOW_DEV_DB = "true";
     process.env.OLLAMA_URL = "http://localhost:11434";
-    process.env.QDRANT_URL = "http://localhost:6333";
+    delete process.env.LEGACY_QDRANT_VECTOR_ENABLED;
 
     const errors = validateConfig();
     expect(errors.some(e => e.includes("DATABASE_URL"))).toBe(false);
@@ -44,27 +45,38 @@ describe("validateConfig", () => {
   it("returns error when OLLAMA_URL is missing", () => {
     process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
     delete process.env.OLLAMA_URL;
-    process.env.QDRANT_URL = "http://localhost:6333";
+    delete process.env.LEGACY_QDRANT_VECTOR_ENABLED;
 
     const errors = validateConfig();
     expect(errors.length).toBeGreaterThan(0);
     expect(errors.some(e => e.includes("OLLAMA_URL"))).toBe(true);
   });
 
-  it("returns error when QDRANT_URL is missing", () => {
+  it("returns error when QDRANT_URL is missing and legacy path is enabled", () => {
     process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
     process.env.OLLAMA_URL = "http://localhost:11434";
     delete process.env.QDRANT_URL;
+    process.env.LEGACY_QDRANT_VECTOR_ENABLED = "true";
 
     const errors = validateConfig();
     expect(errors.length).toBeGreaterThan(0);
     expect(errors.some(e => e.includes("QDRANT_URL"))).toBe(true);
   });
 
+  it("does not return QDRANT_URL error when legacy path is disabled", () => {
+    process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
+    process.env.OLLAMA_URL = "http://localhost:11434";
+    delete process.env.QDRANT_URL;
+    delete process.env.LEGACY_QDRANT_VECTOR_ENABLED;
+
+    const errors = validateConfig();
+    expect(errors.some(e => e.includes("QDRANT_URL"))).toBe(false);
+  });
+
   it("returns empty array when all required config is present", () => {
     process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
     process.env.OLLAMA_URL = "http://localhost:11434";
-    process.env.QDRANT_URL = "http://localhost:6333";
+    delete process.env.LEGACY_QDRANT_VECTOR_ENABLED;
 
     const errors = validateConfig();
     expect(errors.length).toBe(0);
@@ -74,12 +86,12 @@ describe("validateConfig", () => {
     delete process.env.DATABASE_URL;
     delete process.env.ALLOW_DEV_DB;
     delete process.env.OLLAMA_URL;
-    delete process.env.QDRANT_URL;
+    delete process.env.LEGACY_QDRANT_VECTOR_ENABLED;
 
     const errors = validateConfig();
-    expect(errors.length).toBe(3);
+    expect(errors.length).toBe(2);
     expect(errors.some(e => e.includes("DATABASE_URL"))).toBe(true);
     expect(errors.some(e => e.includes("OLLAMA_URL"))).toBe(true);
-    expect(errors.some(e => e.includes("QDRANT_URL"))).toBe(true);
+    expect(errors.some(e => e.includes("QDRANT_URL"))).toBe(false);
   });
 });

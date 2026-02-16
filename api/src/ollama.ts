@@ -1,8 +1,17 @@
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://ollama:11434";
 const EMBED_MODEL = process.env.EMBED_MODEL || "nomic-embed-text";
 
+function getOllamaUrl(): string {
+  const ollamaUrl = process.env.OLLAMA_URL;
+  if (!ollamaUrl) {
+    throw new Error("OLLAMA_URL is required for embedding generation");
+  }
+  return ollamaUrl;
+}
+
 async function embedOne(text: string): Promise<number[]> {
-  const res = await fetch(`${OLLAMA_URL}/api/embeddings`, {
+  const ollamaUrl = getOllamaUrl();
+
+  const res = await fetch(`${ollamaUrl}/api/embeddings`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ model: EMBED_MODEL, prompt: text }),

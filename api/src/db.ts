@@ -5,22 +5,27 @@ import { fileURLToPath } from "url";
 
 const { Pool } = pg;
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ??
-  (process.env.ALLOW_DEV_DB === "true" ? "postgresql://localhost:5432/ragstack" : undefined);
+function getDatabaseUrl(): string | undefined {
+  return (
+    process.env.DATABASE_URL ??
+    (process.env.ALLOW_DEV_DB === "true" ? "postgresql://localhost:5432/raged" : undefined)
+  );
+}
 
 let pool: pg.Pool | null = null;
 
 export function getPool(): pg.Pool {
   if (!pool) {
-    if (!DATABASE_URL) {
+    const databaseUrl = getDatabaseUrl();
+
+    if (!databaseUrl) {
       throw new Error(
-        "DATABASE_URL is not set. Set DATABASE_URL or set ALLOW_DEV_DB=true for local development."
+        "DATABASE_URL is not set. Set DATABASE_URL (e.g., postgresql://localhost:5432/raged) or set ALLOW_DEV_DB=true for local development."
       );
     }
 
     pool = new Pool({
-      connectionString: DATABASE_URL,
+      connectionString: databaseUrl,
     });
   }
   return pool;
