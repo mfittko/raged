@@ -1,20 +1,11 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import { ensureCollection, qdrant, collectionName, getPointsByBaseId, scrollPoints, scrollPointsPage, getPointsByIds } from "./qdrant.js";
-import { embed } from "./ollama.js";
 import { registerAuth } from "./auth.js";
 import { registerErrorHandler } from "./errors.js";
-import { ingest } from "./services/ingest.js";
-import { query } from "./services/query.js";
-import { getEnrichmentStatus, getEnrichmentStats, enqueueEnrichment as enqueueEnrichmentService } from "./services/enrichment.js";
-import { validateIngestRequest } from "./services/ingest-validation.js";
 import { ingestSchema, querySchema, enrichmentStatusSchema, enrichmentEnqueueSchema, graphEntitySchema } from "./schemas.js";
 import type { IngestRequest } from "./services/ingest.js";
-import type { QueryRequest } from "./services/query.js";
-import type { EnrichmentStatusRequest, EnqueueRequest } from "./services/enrichment.js";
-import { isEnrichmentEnabled, getQueueLength, enqueueEnrichment as enqueueTask } from "./redis.js";
-import { isGraphEnabled, expandEntities, getEntity, getDocumentsByEntityMention } from "./graph-client.js";
+import { validateIngestRequest } from "./services/ingest-validation.js";
 
 export function buildApp() {
   // Trust proxy only when explicitly enabled via env var for security
@@ -65,110 +56,36 @@ export function buildApp() {
         return reply.status(400).send(validationError);
       }
     }
-  }, async (req) => {
-    const body = req.body as IngestRequest;
-    return ingest(body, {
-      embed,
-      ensureCollection,
-      upsert: async (collection, points) => {
-        await qdrant.upsert(collection, { wait: true, points });
-      },
-      collectionName,
-    });
+  }, async (_req, reply) => {
+    // TODO: Implement with Postgres in subsequent PR
+    return reply.status(501).send({ error: "Not implemented - pending Postgres migration" });
   });
 
-  app.post("/query", { schema: querySchema }, async (req) => {
-    const body = req.body as QueryRequest;
-    return query(body, {
-      embed,
-      ensureCollection,
-      search: async (collection, vector, limit, filter) => {
-        const res = await qdrant.search(collection, {
-          vector,
-          limit,
-          with_payload: true,
-          filter,
-        });
-        return (res ?? []).map((r) => ({
-          id: r.id,
-          score: r.score,
-          payload: r.payload as Record<string, unknown> | undefined,
-        }));
-      },
-      collectionName,
-      expandEntities: isGraphEnabled() ? expandEntities : undefined,
-    });
+  app.post("/query", { schema: querySchema }, async (_req, reply) => {
+    // TODO: Implement with Postgres in subsequent PR
+    return reply.status(501).send({ error: "Not implemented - pending Postgres migration" });
   });
 
   // Enrichment endpoints
-  app.get("/enrichment/status/:baseId", { schema: enrichmentStatusSchema }, async (req) => {
-    const params = req.params as { baseId: string };
-    const query = req.query as { collection?: string };
-    const request: EnrichmentStatusRequest = {
-      baseId: params.baseId,
-      collection: query.collection,
-    };
-    return getEnrichmentStatus(request, {
-      collectionName,
-      getPointsByBaseId: async (collection, baseId) => {
-        return getPointsByBaseId(collection, baseId);
-      },
-      scrollPointsPage,
-      scrollPoints,
-      getQueueLength,
-      enqueueTask,
-    });
+  app.get("/enrichment/status/:baseId", { schema: enrichmentStatusSchema }, async (_req, reply) => {
+    // TODO: Implement with Postgres in subsequent PR
+    return reply.status(501).send({ error: "Not implemented - pending Postgres migration" });
   });
 
-  app.get("/enrichment/stats", async () => {
-    if (!isEnrichmentEnabled()) {
-      return {
-        queue: { pending: 0, processing: 0, deadLetter: 0 },
-        totals: { enriched: 0, failed: 0, pending: 0, processing: 0, none: 0 },
-      };
-    }
-    return getEnrichmentStats({
-      collectionName,
-      scrollPointsPage,
-      getQueueLength,
-    });
+  app.get("/enrichment/stats", async (_req, reply) => {
+    // TODO: Implement with Postgres in subsequent PR
+    return reply.status(501).send({ error: "Not implemented - pending Postgres migration" });
   });
 
-  app.post("/enrichment/enqueue", { schema: enrichmentEnqueueSchema }, async (req) => {
-    if (!isEnrichmentEnabled()) {
-      return { ok: true, enqueued: 0 };
-    }
-    const body = req.body as EnqueueRequest;
-    return enqueueEnrichmentService(body, {
-      collectionName,
-      getPointsByBaseId,
-      scrollPointsPage,
-      scrollPoints,
-      getQueueLength,
-      enqueueTask,
-    });
+  app.post("/enrichment/enqueue", { schema: enrichmentEnqueueSchema }, async (_req, reply) => {
+    // TODO: Implement with Postgres in subsequent PR
+    return reply.status(501).send({ error: "Not implemented - pending Postgres migration" });
   });
 
   // Graph endpoint
-  app.get("/graph/entity/:name", { schema: graphEntitySchema }, async (req, reply) => {
-    const params = req.params as { name: string };
-    if (!isGraphEnabled()) {
-      return reply.status(503).send({ error: "Graph functionality is not enabled" });
-    }
-
-    const entityDetails = await getEntity(params.name);
-    if (!entityDetails) {
-      return reply.status(404).send({ error: "Entity not found" });
-    }
-
-    // Get documents that mention this entity
-    const documentIds = await getDocumentsByEntityMention(params.name);
-
-    return {
-      entity: entityDetails.entity,
-      connections: entityDetails.connections,
-      documents: documentIds.map(id => ({ id })),
-    };
+  app.get("/graph/entity/:name", { schema: graphEntitySchema }, async (_req, reply) => {
+    // TODO: Implement with Postgres in subsequent PR
+    return reply.status(501).send({ error: "Not implemented - pending Postgres migration" });
   });
 
   return app;

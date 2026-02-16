@@ -2,9 +2,18 @@ import { randomUUID } from "node:crypto";
 import { chunkText } from "../chunking.js";
 import { detectDocType, type DocType, type IngestItem } from "../doctype.js";
 import { extractTier1 } from "../extractors/index.js";
-import { enqueueEnrichment, isEnrichmentEnabled, type EnrichmentTask } from "../redis.js";
+import type { EnrichmentTask } from "../types.js";
 import { fetchUrls } from "./url-fetch.js";
 import { extractContentAsync } from "./url-extract.js";
+
+// Temporary stubs for enrichment - will be replaced with Postgres implementation
+function isEnrichmentEnabled(): boolean {
+  return false;
+}
+
+async function enqueueEnrichment(_task: EnrichmentTask): Promise<void> {
+  // Stub - enrichment disabled during migration
+}
 
 export interface IngestRequest {
   collection?: string;

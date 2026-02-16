@@ -1,18 +1,17 @@
 import { buildApp } from "./server.js";
-import { ensureIndexes, isGraphEnabled } from "./graph-client.js";
+import { runMigrations } from "./db.js";
 
 const PORT = Number(process.env.PORT || "8080");
 const app = buildApp();
 
-// Initialize database indexes on startup
+// Run database migrations on startup
 async function init() {
-  if (isGraphEnabled()) {
-    try {
-      await ensureIndexes();
-      app.log.info("Neo4j indexes ensured");
-    } catch (err) {
-      app.log.warn({ err }, "Failed to ensure Neo4j indexes");
-    }
+  try {
+    await runMigrations();
+    app.log.info("Database migrations completed");
+  } catch (err) {
+    app.log.error({ err }, "Failed to run database migrations");
+    throw err;
   }
 }
 

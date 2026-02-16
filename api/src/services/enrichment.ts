@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { EnrichmentTask } from "../redis.js";
+import type { EnrichmentTask } from "../types.js";
 
 export interface EnrichmentStatusRequest {
   baseId: string;
