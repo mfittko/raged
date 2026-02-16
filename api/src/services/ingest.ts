@@ -2,9 +2,38 @@ import { randomUUID } from "node:crypto";
 import { chunkText } from "../chunking.js";
 import { detectDocType, type DocType, type IngestItem } from "../doctype.js";
 import { extractTier1 } from "../extractors/index.js";
-import { enqueueEnrichment, isEnrichmentEnabled, type EnrichmentTask } from "../redis.js";
+import type { EnrichmentTask } from "../types.js";
 import { fetchUrls } from "./url-fetch.js";
 import { extractContentAsync } from "./url-extract.js";
+import { query } from "../db.js";
+
+// Enrichment functions using Postgres task_queue
+function isEnrichmentEnabled(): boolean {
+  return process.env.ENRICHMENT_ENABLED === "true";
+}
+
+async function enqueueEnrichmentBatch(tasks: EnrichmentTask[]): Promise<void> {
+  if (!isEnrichmentEnabled() || tasks.length === 0) {
+    return;
+  }
+
+  const now = new Date();
+  const values: unknown[] = [];
+  const rowsSql: string[] = [];
+
+  for (let index = 0; index < tasks.length; index++) {
+    const task = tasks[index];
+    const base = index * 4;
+    rowsSql.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`);
+    values.push("enrichment", "pending", JSON.stringify(task), now);
+  }
+
+  await query(
+    `INSERT INTO task_queue (queue, status, payload, run_after)
+     VALUES ${rowsSql.join(", ")}`,
+    values
+  );
+}
 
 export interface IngestRequest {
   collection?: string;
@@ -268,7 +297,7 @@ export async function ingest(
       for (let chunkIndex = 0; chunkIndex < procItem.chunks.length; chunkIndex++) {
         tasks.push({
           taskId: randomUUID(),
-          qdrantId: `${procItem.baseId}:${chunkIndex}`,
+          chunkId: `${procItem.baseId}:${chunkIndex}`,
           collection: col,
           docType: procItem.docType,
           baseId: procItem.baseId,
@@ -283,10 +312,10 @@ export async function ingest(
       }
     }
 
-    // Batch enqueue tasks in groups to avoid overwhelming Redis
+    // Batch enqueue tasks in groups to avoid overwhelming the database
     for (let i = 0; i < tasks.length; i += TASK_BATCH_SIZE) {
       const batch = tasks.slice(i, i + TASK_BATCH_SIZE);
-      await Promise.all(batch.map(task => enqueueEnrichment(task)));
+      await enqueueEnrichmentBatch(batch);
     }
 
     const result: IngestResult = {

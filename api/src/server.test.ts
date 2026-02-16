@@ -292,9 +292,8 @@ describe("API integration tests", () => {
   });
 
   describe("enrichment endpoints", () => {
-    it("GET /enrichment/status/:baseId returns 404 for missing baseId", async () => {
-      // This test requires Qdrant to be running. When Qdrant is not available,
-      // the error handler will return 500, so we check for either 404 or 500.
+    // TODO: Update after routes are implemented with Postgres
+    it("GET /enrichment/status/:baseId returns 501 (not yet implemented)", async () => {
       const { buildApp } = await import("./server.js");
       const app = buildApp();
 
@@ -303,13 +302,13 @@ describe("API integration tests", () => {
         url: "/enrichment/status/nonexistent-base-id",
       });
 
-      // Either 404 (baseId not found) or 500 (Qdrant unavailable in test env)
-      expect([404, 500]).toContain(res.statusCode);
+      expect(res.statusCode).toBe(501);
       expect(res.json()).toHaveProperty("error");
       await app.close();
     });
 
-    it("GET /enrichment/stats returns stats when enrichment disabled", async () => {
+    // TODO: Update after routes are implemented with Postgres
+    it("GET /enrichment/stats returns 501 (not yet implemented)", async () => {
       const { buildApp } = await import("./server.js");
       const app = buildApp();
 
@@ -318,14 +317,13 @@ describe("API integration tests", () => {
         url: "/enrichment/stats",
       });
 
-      expect(res.statusCode).toBe(200);
-      const body = res.json();
-      expect(body).toHaveProperty("queue");
-      expect(body).toHaveProperty("totals");
+      expect(res.statusCode).toBe(501);
+      expect(res.json()).toHaveProperty("error");
       await app.close();
     });
 
-    it("POST /enrichment/enqueue returns 0 when enrichment disabled", async () => {
+    // TODO: Update after routes are implemented with Postgres
+    it("POST /enrichment/enqueue returns 501 (not yet implemented)", async () => {
       const { buildApp } = await import("./server.js");
       const app = buildApp();
 
@@ -335,12 +333,13 @@ describe("API integration tests", () => {
         payload: { collection: "docs" },
       });
 
-      expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ ok: true, enqueued: 0 });
+      expect(res.statusCode).toBe(501);
+      expect(res.json()).toHaveProperty("error");
       await app.close();
     });
 
-    it("POST /enrichment/enqueue accepts valid payload", async () => {
+    // TODO: Update after routes are implemented with Postgres
+    it("POST /enrichment/enqueue with collection returns 501 (not yet implemented)", async () => {
       const { buildApp } = await import("./server.js");
       const app = buildApp();
 
@@ -350,13 +349,15 @@ describe("API integration tests", () => {
         payload: { collection: "docs", force: false },
       });
 
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(501);
+      expect(res.json()).toHaveProperty("error");
       await app.close();
     });
   });
 
   describe("graph endpoints", () => {
-    it("GET /graph/entity/:name returns 503 when graph disabled", async () => {
+    // TODO: Update after graph functionality is migrated to Postgres
+    it("GET /graph/entity/:name returns 501 (not yet implemented)", async () => {
       const { buildApp } = await import("./server.js");
       const app = buildApp();
 
@@ -365,8 +366,8 @@ describe("API integration tests", () => {
         url: "/graph/entity/AuthService",
       });
 
-      expect(res.statusCode).toBe(503);
-      expect(res.json()).toEqual({ error: "Graph functionality is not enabled" });
+      expect(res.statusCode).toBe(501);
+      expect(res.json()).toHaveProperty("error");
       await app.close();
     });
   });

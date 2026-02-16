@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { EnrichmentTask } from "../redis.js";
+import type { EnrichmentTask } from "../types.js";
 
 export interface EnrichmentStatusRequest {
   baseId: string;
@@ -277,7 +277,7 @@ export async function enqueueEnrichment(
 
       const task: EnrichmentTask = {
         taskId: randomUUID(),
-        qdrantId: point.id,
+        chunkId: point.id,
         collection: col,
         docType: (payload.docType as string) || "text",
         baseId,
@@ -315,9 +315,9 @@ export async function enqueueEnrichment(
   return { ok: true, enqueued };
 }
 
-function extractBaseId(qdrantId: string): string {
+function extractBaseId(chunkId: string): string {
   // Format is typically "baseId:chunkIndex"
-  const lastColon = qdrantId.lastIndexOf(":");
-  if (lastColon === -1) return qdrantId;
-  return qdrantId.substring(0, lastColon);
+  const lastColon = chunkId.lastIndexOf(":");
+  if (lastColon === -1) return chunkId;
+  return chunkId.substring(0, lastColon);
 }
