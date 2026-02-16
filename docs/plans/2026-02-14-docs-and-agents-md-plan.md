@@ -1071,7 +1071,7 @@ If running raged via Docker Compose on the same machine:
 Set environment variables for your shell (or in your Claude Code configuration):
 
 ```bash
-export RAG_API_URL=https://rag.example.com
+export RAGED_URL=https://rag.example.com
 export RAGED_API_TOKEN=your-token-here
 ```
 
@@ -1084,7 +1084,7 @@ The skill is invoked automatically when Claude determines it needs codebase cont
 Claude will run:
 ```bash
 raged-index query \
-  --api "${RAG_API_URL:-http://localhost:8080}" \
+  --api "${RAGED_URL:-http://localhost:8080}" \
   --q "authentication implementation" \
   --topK 5 \
   --token "${RAGED_API_TOKEN:-}"

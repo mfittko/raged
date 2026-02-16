@@ -70,5 +70,5 @@ For private repos, you need to provide Git SSH credentials to the indexer Job. T
 kubectl get jobs -n rag
 
 # View indexer logs
-kubectl logs -n rag -l app=rag-stack-indexer --tail 100
+kubectl logs -n rag -l app=raged-indexer --tail 100
 ```

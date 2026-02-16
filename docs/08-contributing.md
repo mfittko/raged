@@ -1,6 +1,6 @@
 # Contributing
 
-How to develop, test, and submit changes to rag-stack.
+How to develop, test, and submit changes to raged.
 
 ## Development Setup
 
@@ -14,8 +14,8 @@ How to develop, test, and submit changes to rag-stack.
 
 ```bash
 # Clone the repo
-git clone https://github.com/<org>/rag-stack.git
-cd rag-stack
+git clone https://github.com/<org>/raged.git
+cd raged
 
 # Start infrastructure
 docker compose up -d
@@ -120,7 +120,7 @@ Commit both the changed input file(s) and generated lock file(s) in the same PR.
 ## Project Structure
 
 ```
-rag-stack/
+raged/
 ├── api/          → Fastify RAG API (see api/AGENTS.md)
 ├── cli/          → CLI indexer tool (see cli/AGENTS.md)
 ├── chart/        → Helm chart (see chart/AGENTS.md)

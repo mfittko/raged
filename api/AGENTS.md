@@ -57,7 +57,7 @@ All configuration is via environment variables. Document every env var in this f
 | `DISTANCE` | `Cosine` | Qdrant distance metric |
 | `EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
 | `PORT` | `8080` | API listen port |
-| `RAG_API_TOKEN` | _(empty)_ | Bearer token for auth (empty = auth disabled) |
+| `RAGED_API_TOKEN` | _(empty)_ | Bearer token for auth (empty = auth disabled) |
 | `ENRICHMENT_ENABLED` | `false` | Enable enrichment queue processing (requires `REDIS_URL`) |
 | `REDIS_URL` | _(empty)_ | Redis connection URL for enrichment queue (empty = enrichment disabled) |
 | `NEO4J_URL` | _(empty)_ | Neo4j connection URL (e.g., `bolt://neo4j:7687`) (empty = graph disabled) |

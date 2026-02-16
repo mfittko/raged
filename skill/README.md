@@ -1,4 +1,4 @@
-# rag-stack OpenClaw Skill
+# raged OpenClaw Skill
 
 An [OpenClaw](https://openclaw.ai/) AgentSkill that gives your agent a semantic
 knowledge base — ingest code, docs, articles, emails, transcripts, or any text
@@ -9,13 +9,13 @@ and retrieve relevant context via natural-language queries.
 ### Option A: Symlink (development)
 
 ```bash
-ln -s /path/to/rag-stack/skill ~/.openclaw/skills/rag-stack
+ln -s /path/to/raged/skill ~/.openclaw/skills/raged
 ```
 
 ### Option B: Copy
 
 ```bash
-cp -r /path/to/rag-stack/skill ~/.openclaw/skills/rag-stack
+cp -r /path/to/raged/skill ~/.openclaw/skills/raged
 ```
 
 ## Configure
@@ -26,11 +26,11 @@ Add to `~/.openclaw/openclaw.json`:
 {
   "skills": {
     "entries": {
-      "rag-stack": {
+      "raged": {
         "enabled": true,
         "env": {
-          "RAG_STACK_URL": "http://localhost:8080",
-          "RAG_STACK_TOKEN": ""
+          "RAGED_URL": "http://localhost:8080",
+          "RAGED_TOKEN": ""
         }
       }
     }
@@ -38,11 +38,11 @@ Add to `~/.openclaw/openclaw.json`:
 }
 ```
 
-Set `RAG_STACK_TOKEN` only if your rag-stack instance has `RAGED_API_TOKEN` configured.
+Set `RAGED_TOKEN` only if your raged instance has `RAGED_API_TOKEN` configured.
 
 ## Prerequisites
 
-1. A running rag-stack instance: `docker compose up -d` (from the rag-stack repo)
+1. A running raged instance: `docker compose up -d` (from the raged repo)
 2. `curl` on PATH
 3. The Ollama embedding model pulled: `curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'`
 
@@ -50,6 +50,6 @@ Set `RAG_STACK_TOKEN` only if your rag-stack instance has `RAGED_API_TOKEN` conf
 
 ```bash
 # In an OpenClaw session, ask:
-"Is rag-stack running?"
+"Is raged running?"
 # The agent will call /healthz and report status.
 ```

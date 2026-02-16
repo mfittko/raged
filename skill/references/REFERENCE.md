@@ -111,4 +111,4 @@ Embeds query text, performs vector similarity search.
 | `DISTANCE` | `Cosine` | Similarity metric |
 | `EMBED_MODEL` | `nomic-embed-text` | Ollama model name |
 | `PORT` | `8080` | API listen port |
-| `RAG_API_TOKEN` | _(empty)_ | Bearer token (empty = auth disabled) |
+| `RAGED_API_TOKEN` | _(empty)_ | Bearer token (empty = auth disabled) |

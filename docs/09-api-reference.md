@@ -1,6 +1,6 @@
 # API Reference
 
-HTTP API for the rag-stack RAG service.
+HTTP API for the raged RAG service.
 
 **Base URL:** `http://localhost:8080` (local) or your Ingress hostname (remote)
 

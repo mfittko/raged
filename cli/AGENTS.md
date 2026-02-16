@@ -28,7 +28,7 @@ Every CLI command must be represented in the `usage()` function with its full fl
 Error messages must tell the user what to do, not just what failed.
 
 - Bad: `Error: 401`
-- Good: `Error: 401 Unauthorized — pass --token or set RAG_API_TOKEN`
+- Good: `Error: 401 Unauthorized — pass --token or set RAGED_API_TOKEN`
 
 ### File Scanning
 
@@ -45,4 +45,4 @@ Ingest files in batches (currently 50 items) to avoid overwhelming the API with 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RAG_API_TOKEN` | _(empty)_ | Bearer token (alternative to `--token` flag) |
+| `RAGED_API_TOKEN` | _(empty)_ | Bearer token (alternative to `--token` flag) |

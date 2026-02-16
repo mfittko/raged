@@ -1295,7 +1295,7 @@ git commit -m "docs: update architecture and vision with enrichment pipeline and
 
 **Files:**
 - Modify: `skill/SKILL.md`
-- Modify: `skill/skills/rag-stack/SKILL.md`
+- Modify: `skill/skills/raged/SKILL.md`
 
 Update the skill definitions to document the new capabilities: enrichment status checking, graph queries, `--enrich` and `--doc-type` flags, `raged-index ingest` for non-repo content.
 
@@ -1303,7 +1303,7 @@ Update the skill definitions to document the new capabilities: enrichment status
 
 ```bash
 git add skill/
-git commit -m "docs: update rag-stack skills with enrichment and graph capabilities"
+git commit -m "docs: update raged skills with enrichment and graph capabilities"
 ```
 
 ---
