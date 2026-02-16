@@ -163,6 +163,13 @@ export async function validateUrl(url: string): Promise<{ hostname: string; reso
   
   let hostname = parsed.hostname;
   
+  // Allow bypassing SSRF checks for local development
+  // WARNING: Only use in trusted local environments
+  if (process.env.DISABLE_SSRF_CHECK === "true") {
+    const port = parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === "https:" ? 443 : 80);
+    return { hostname, resolvedIp: hostname, port };
+  }
+  
   // Check blocked hostnames
   if (BLOCKED_HOSTNAMES.has(hostname.toLowerCase())) {
     throw new SsrfError(`Blocked hostname: ${hostname}`);

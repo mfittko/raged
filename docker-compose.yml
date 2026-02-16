@@ -1,7 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg17
-    ports: ["5432:5432"]
+    ports: ["${POSTGRES_HOST_PORT:-5432}:5432"]
     environment:
       POSTGRES_USER: "${POSTGRES_USER:-raged}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-raged}"
@@ -17,7 +17,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    ports: ["11434:11434"]
+    ports: ["${OLLAMA_HOST_PORT:-11434}:11434"]
     volumes: ["ollama:/root/.ollama"]
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -28,8 +28,8 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs:3.80
     ports:
-      - "8333:8333"
-      - "9333:9333"
+      - "${SEAWEEDFS_S3_HOST_PORT:-8333}:8333"
+      - "${SEAWEEDFS_MASTER_HOST_PORT:-9333}:9333"
     environment:
       WEED_S3_ACCESS_KEY: "${BLOB_STORE_ACCESS_KEY:-seaweedfs}"
       WEED_S3_SECRET_KEY: "${BLOB_STORE_SECRET_KEY:-seaweedfs-secret}"
@@ -65,7 +65,8 @@ services:
       PORT: "8080"
       RAGED_API_TOKEN: ""  # set to enable auth
       ENRICHMENT_ENABLED: "false"
-    ports: ["8080:8080"]
+      DISABLE_SSRF_CHECK: "${DISABLE_SSRF_CHECK:-false}"  # Only true for local development
+    ports: ["${API_HOST_PORT:-8080}:8080"]
     depends_on:
       postgres:
         condition: service_healthy

@@ -226,14 +226,23 @@ export async function ingest(
     }
 
     const docType = detectDocType(item);
+    const tier1Meta = extractTier1(item, docType);
+    
+    // Merge item.metadata fields into tier1Meta for filter support
     const metadata: Record<string, unknown> = {
       ...(item.metadata ?? {}),
     };
+    
+    // Copy filter-relevant fields from metadata to tier1Meta
+    if (metadata.repoId) tier1Meta.repoId = metadata.repoId;
+    if (metadata.repoUrl) tier1Meta.repoUrl = metadata.repoUrl;
+    if (metadata.path) tier1Meta.path = metadata.path;
+    if (metadata.lang) tier1Meta.lang = metadata.lang;
 
     processedItems.push({
       baseId: item.id ?? randomUUID(),
       docType,
-      tier1Meta: extractTier1(item, docType),
+      tier1Meta,
       chunks: chunkText(item.text),
       source: item.source,
       itemUrl: item.url,
@@ -299,14 +308,21 @@ export async function ingest(
           const chunkValues: unknown[] = [];
           const chunkRows: string[] = [];
           
-          // 6 parameters per row for the chunks INSERT query: document_id, chunk_index, text, embedding, enrichment_status, tier1_meta
-          const PARAMS_PER_CHUNK = 6;
+          // Extract denormalized filter fields from tier1_meta
+          const tier1 = procItem.tier1Meta;
+          const repoId = tier1.repoId as string | null || null;
+          const repoUrl = tier1.repoUrl as string | null || null;
+          const path = tier1.path as string | null || null;
+          const lang = tier1.lang as string | null || null;
+          
+          // 12 parameters per row: document_id, chunk_index, text, embedding, enrichment_status, tier1_meta, repo_id, repo_url, path, lang, doc_type, item_url
+          const PARAMS_PER_CHUNK = 12;
           
           for (let i = 0; i < batchChunks.length; i++) {
             const chunkIndex = batchStart + i;
             const base = i * PARAMS_PER_CHUNK;
             chunkRows.push(
-              `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}::vector, $${base + 5}, $${base + 6})`
+              `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}::vector, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12})`
             );
             chunkValues.push(
               documentId,
@@ -314,20 +330,33 @@ export async function ingest(
               batchChunks[i],
               formatVector(batchVectors[i]),
               shouldEnrich ? "pending" : "none",
-              JSON.stringify(procItem.tier1Meta)
+              JSON.stringify(procItem.tier1Meta),
+              repoId,
+              repoUrl,
+              path,
+              lang,
+              procItem.docType,
+              procItem.itemUrl || null
             );
           }
 
           await client.query(
             `INSERT INTO chunks (
-              document_id, chunk_index, text, embedding, enrichment_status, tier1_meta
+              document_id, chunk_index, text, embedding, enrichment_status, tier1_meta,
+              repo_id, repo_url, path, lang, doc_type, item_url
             ) VALUES ${chunkRows.join(", ")}
             ON CONFLICT (document_id, chunk_index)
             DO UPDATE SET
               text = EXCLUDED.text,
               embedding = EXCLUDED.embedding,
               enrichment_status = EXCLUDED.enrichment_status,
-              tier1_meta = EXCLUDED.tier1_meta`,
+              tier1_meta = EXCLUDED.tier1_meta,
+              repo_id = EXCLUDED.repo_id,
+              repo_url = EXCLUDED.repo_url,
+              path = EXCLUDED.path,
+              lang = EXCLUDED.lang,
+              doc_type = EXCLUDED.doc_type,
+              item_url = EXCLUDED.item_url`,
             chunkValues
           );
 
