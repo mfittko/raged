@@ -1,12 +1,12 @@
 # Architecture
 
-rag-stack is a multi-component system for RAG with enrichment and knowledge graph capabilities.
+raged is a multi-component system for RAG with enrichment and knowledge graph capabilities.
 
 ## Component Diagram
 
 ```mermaid
 graph TD
-    CLI[rag-index CLI] -->|"POST /ingest"| API[RAG API<br/>:8080]
+    CLI[raged-index CLI] -->|"POST /ingest"| API[RAG API<br/>:8080]
     CLI -->|"POST /query"| API
     CLI -->|"POST /enrichment/enqueue"| API
     CLI -->|"GET /graph/entity/:name"| API
@@ -140,7 +140,7 @@ sequenceDiagram
 **Error Handling:**
 Partial success model — successfully fetched items are ingested, failures are returned in `errors` array with per-URL status and reason.
 
-### CLI (rag-index)
+### CLI (raged-index)
 
 Command-line tool with five commands:
 - `index` — Clone Git repo and index files
@@ -162,7 +162,7 @@ sequenceDiagram
     participant W as Worker
     participant N as Neo4j
 
-    U->>C: rag-index index --repo <url>
+    U->>C: raged-index index --repo <url>
     C->>C: git clone (shallow)
     C->>C: Scan files, filter, read text
     loop Batch of 50 files
@@ -202,7 +202,7 @@ sequenceDiagram
     participant O as Ollama
     participant Q as Qdrant
 
-    U->>C: rag-index index --repo <url>
+    U->>C: raged-index index --repo <url>
     C->>C: git clone (shallow)
     C->>C: Scan files, filter, read text
     loop Batch of 50 files
@@ -231,7 +231,7 @@ sequenceDiagram
     participant O as Ollama
     participant Q as Qdrant
 
-    U->>C: rag-index query --q "auth flow"
+    U->>C: raged-index query --q "auth flow"
     C->>A: POST /query { query, topK }
     A->>O: POST /api/embeddings { prompt }
     O-->>A: 768d vector
@@ -252,7 +252,7 @@ sequenceDiagram
     participant Q as Qdrant
     participant N as Neo4j
 
-    U->>C: rag-index query --q "auth flow" (with graphExpand)
+    U->>C: raged-index query --q "auth flow" (with graphExpand)
     C->>A: POST /query { query, topK, graphExpand: true }
     A->>O: POST /api/embeddings { prompt }
     O-->>A: 768d vector
@@ -273,7 +273,7 @@ flowchart LR
     H -->|No| R401[401 Unauthorized]
     H -->|Yes| P{Bearer prefix?}
     P -->|No| R401
-    P -->|Yes| T{Timing-safe<br/>compare with<br/>RAG_API_TOKEN}
+    P -->|Yes| T{Timing-safe<br/>compare with<br/>RAGED_API_TOKEN}
     T -->|Mismatch| R401
     T -->|Match| OK[Request proceeds]
 
@@ -283,7 +283,7 @@ flowchart LR
     style OK fill:#c8e6c9
 ```
 
-- Token auth is optional (disabled when `RAG_API_TOKEN` is empty)
+- Token auth is optional (disabled when `RAGED_API_TOKEN` is empty)
 - `/healthz` always bypasses auth
 - Token comparison uses timing-safe algorithm to prevent timing attacks
 - Tokens are provided via environment variable, never hardcoded

@@ -1,6 +1,6 @@
 # Agent Integrations
 
-rag-stack is agent-agnostic and works with any agent that can call HTTP or execute shell commands.
+raged is agent-agnostic and works with any agent that can call HTTP or execute shell commands.
 
 This page covers built-in integrations.
 
@@ -13,12 +13,12 @@ sequenceDiagram
     participant U as User
     participant C as Claude Code
     participant S as rag-memory Skill
-    participant CLI as rag-index CLI
+    participant CLI as raged-index CLI
     participant API as RAG API
 
     U->>C: "How does auth work in project X?"
     C->>S: Invoke skill
-    S->>CLI: rag-index query --q "auth" --topK 5
+    S->>CLI: raged-index query --q "auth" --topK 5
     CLI->>API: POST /query
     API-->>CLI: Relevant chunks
     CLI-->>S: Formatted results
@@ -45,7 +45,7 @@ sequenceDiagram
 
 ```bash
 export RAG_API_URL=https://rag.example.com
-export RAG_API_TOKEN=your-token-here
+export RAGED_API_TOKEN=your-token-here
 ```
 
 ### Usage
@@ -56,11 +56,11 @@ The skill is invoked automatically when Claude determines it needs context. You 
 
 Claude will run:
 ```bash
-rag-index query \
+raged-index query \
   --api "${RAG_API_URL:-http://localhost:8080}" \
   --q "authentication implementation" \
   --topK 5 \
-  --token "${RAG_API_TOKEN:-}"
+  --token "${RAGED_API_TOKEN:-}"
 ```
 
 ## OpenClaw
@@ -71,7 +71,7 @@ rag-index query \
 sequenceDiagram
     participant U as User
     participant OC as OpenClaw
-    participant S as rag-stack Skill
+    participant S as raged Skill
     participant API as RAG API
 
     U->>OC: "Find docs about deployment strategy"
@@ -85,15 +85,15 @@ sequenceDiagram
 ### Skill Location
 
 ```
-~/.openclaw/skills/rag-stack/SKILL.md
+~/.openclaw/skills/raged/SKILL.md
 ```
 
 ### Setup
 
-Install the skill (from the rag-stack repo):
+Install the skill (from the raged repo):
 
 ```bash
-ln -s /path/to/rag-stack/skill ~/.openclaw/skills/rag-stack
+ln -s /path/to/raged/skill ~/.openclaw/skills/raged
 ```
 
 Configure in `~/.openclaw/openclaw.json`:
@@ -102,11 +102,11 @@ Configure in `~/.openclaw/openclaw.json`:
 {
   "skills": {
     "entries": {
-      "rag-stack": {
+      "raged": {
         "enabled": true,
         "env": {
-          "RAG_STACK_URL": "http://localhost:8080",
-          "RAG_STACK_TOKEN": ""
+          "RAGED_URL": "http://localhost:8080",
+          "RAGED_TOKEN": ""
         }
       }
     }
@@ -116,15 +116,15 @@ Configure in `~/.openclaw/openclaw.json`:
 
 ### Usage
 
-OpenClaw activates the skill based on the description in SKILL.md. The agent uses `curl` to call the rag-stack API directly.
+OpenClaw activates the skill based on the description in SKILL.md. The agent uses `curl` to call the raged API directly.
 
 ## Other Agents
 
-Any agent that can call HTTP or execute shell commands can use rag-stack:
+Any agent that can call HTTP or execute shell commands can use raged:
 
 ```bash
 # Via CLI
-rag-index query --api <url> --q "<question>" --topK 5
+raged-index query --api <url> --q "<question>" --topK 5
 
 # Via HTTP API
 curl -X POST https://rag.example.com/query \

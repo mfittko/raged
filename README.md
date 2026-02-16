@@ -1,11 +1,11 @@
-# rag-stack
+# raged
 
 A vector-first knowledge base for AI agents — ingest any text (code, docs, articles, transcripts, notes), embed it locally, and retrieve relevant context via semantic search and knowledge graph traversal.
 
 ```mermaid
 graph LR
-    Agent[AI Agent] -->|"rag-index query"| CLI[CLI]
-    CLI -->|HTTP| API[RAG API]
+    Agent[AI Agent] -->|"raged-index query"| CLI[CLI]
+    CLI -->|HTTP| API[RAGED API]
     API -->|embed| Ollama
     API -->|search| Qdrant
     API -->|graph expand| Neo4j
@@ -103,7 +103,7 @@ node dist/index.js query \
 
 | Component | Role | Tech |
 |-----------|------|------|
-| **RAG API** | Chunk, embed, store, search, orchestrate enrichment | Fastify, Node.js |
+| **RAGED API** | Chunk, embed, store, search, orchestrate enrichment | Fastify, Node.js |
 | **Qdrant** | Vector storage and similarity search | Qdrant v1.10 |
 | **Ollama** | Local embedding and LLM runtime | nomic-embed-text (768d), llama3, llava |
 | **Redis** | Enrichment task queue *(optional)* | Redis 7 |
@@ -116,11 +116,11 @@ node dist/index.js query \
 
 | Doc | Topic |
 |-----|-------|
-| [Vision & Roadmap](docs/00-vision.md) | Where rag-stack is headed |
+| [Vision & Roadmap](docs/00-vision.md) | Where raged is headed |
 | [Architecture](docs/01-architecture.md) | Components, data flow, security |
 | [Local Development](docs/02-local-dev.md) | Docker Compose setup |
 | [CLI Reference](docs/03-cli.md) | Commands, flags, examples |
-| [Agent Integrations](docs/04-claude-skills.md) | Using rag-stack with Claude Code, OpenClaw, etc. |
+| [Agent Integrations](docs/04-claude-skills.md) | Using raged with Claude Code, OpenClaw, etc. |
 | [Helm Deployment](docs/05-helm-remote.md) | Kubernetes + Ingress + auth |
 | [Troubleshooting](docs/06-troubleshooting.md) | Common issues and fixes |
 | [In-Cluster Indexing](docs/07-indexing-in-cluster.md) | Indexing from inside Kubernetes |

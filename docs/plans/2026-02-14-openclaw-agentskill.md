@@ -1,10 +1,10 @@
-# OpenClaw AgentSkill for rag-stack — Implementation Plan
+# OpenClaw AgentSkill for raged — Implementation Plan
 
 > **Note for contributors:** This implementation plan is intended to be followed step by step.
 
-**Goal:** Build an OpenClaw AgentSkill that enables OpenClaw agents to index Git repositories and query code context via rag-stack's semantic search API.
+**Goal:** Build an OpenClaw AgentSkill that enables OpenClaw agents to index Git repositories and query code context via raged's semantic search API.
 
-**Architecture:** The skill is a `SKILL.md` file (YAML frontmatter + Markdown instructions) that teaches OpenClaw's agent to interact with rag-stack's REST API using `curl`. A small Node.js connectivity checker script provides pre-flight validation. Reference documentation covers advanced API usage. The skill lives in `skill/` at the repo root and can be installed into OpenClaw via symlink or ClawHub publish.
+**Architecture:** The skill is a `SKILL.md` file (YAML frontmatter + Markdown instructions) that teaches OpenClaw's agent to interact with raged's REST API using `curl`. A small Node.js connectivity checker script provides pre-flight validation. Reference documentation covers advanced API usage. The skill lives in `skill/` at the repo root and can be installed into OpenClaw via symlink or ClawHub publish.
 
 **Tech Stack:** SKILL.md (YAML + Markdown), curl (HTTP API calls), Node.js (connectivity checker), `node:test` (testing)
 
@@ -29,11 +29,11 @@ Create `skill/SKILL.md`:
 
 ```markdown
 ---
-name: rag-stack
+name: raged
 description: Placeholder — will be replaced in Task 3.
 ---
 
-# rag-stack
+# raged
 
 Placeholder.
 ```
@@ -62,7 +62,7 @@ import assert from "node:assert/strict";
 import { checkConnection } from "./check-connection.mjs";
 
 describe("checkConnection", () => {
-  it("returns ok when rag-stack health endpoint responds 200", async () => {
+  it("returns ok when raged health endpoint responds 200", async () => {
     const mockFetch = async (url) => {
       assert.match(url, /\/healthz$/);
       return { ok: true, json: async () => ({ ok: true }) };
@@ -138,11 +138,11 @@ Create `skill/scripts/check-connection.mjs`:
 
 ```javascript
 /**
- * Pre-flight check: verifies rag-stack is running and responsive.
+ * Pre-flight check: verifies raged is running and responsive.
  * Used by the OpenClaw agent before issuing query/index commands.
  *
  * Usage: node check-connection.mjs [url]
- *   url defaults to RAG_STACK_URL env var, then http://localhost:8080
+ *   url defaults to RAGED_URL env var, then http://localhost:8080
  */
 
 export async function checkConnection(url, fetchFn = fetch) {
@@ -168,7 +168,7 @@ const isMain =
   process.argv[1]?.endsWith("/check-connection.mjs");
 
 if (isMain) {
-  const url = process.argv[2] || process.env.RAG_STACK_URL || "http://localhost:8080";
+  const url = process.argv[2] || process.env.RAGED_URL || "http://localhost:8080";
   const result = await checkConnection(url);
   console.log(JSON.stringify(result, null, 2));
   process.exit(result.ok ? 0 : 1);
@@ -201,13 +201,13 @@ Replace `skill/SKILL.md` entirely:
 
 ```markdown
 ---
-name: rag-stack
+name: raged
 description: >
-  Index Git repositories and query code context using rag-stack semantic search.
+  Index Git repositories and query code context using raged semantic search.
   Use when the user needs to search code, find relevant source files, understand
   a codebase, index a repository for retrieval, or get grounded context about code.
 version: 0.1.0
-compatibility: Requires curl and a running rag-stack instance (Docker Compose or Kubernetes)
+compatibility: Requires curl and a running raged instance (Docker Compose or Kubernetes)
 metadata:
   openclaw:
     emoji: "magnifying_glass"
@@ -215,47 +215,47 @@ metadata:
       bins:
         - curl
       env:
-        - RAG_STACK_URL
-    primaryEnv: RAG_STACK_URL
+        - RAGED_URL
+    primaryEnv: RAGED_URL
     config:
       apiToken:
-        description: "Bearer token for rag-stack API authentication (optional if auth is disabled)"
+        description: "Bearer token for raged API authentication (optional if auth is disabled)"
         secret: true
 ---
 
-# rag-stack — Semantic Code Search
+# raged — Semantic Code Search
 
 Index Git repositories and retrieve relevant code context via natural-language queries.
 
-rag-stack chunks source files, embeds them with a local model (Ollama + nomic-embed-text),
+raged chunks source files, embeds them with a local model (Ollama + nomic-embed-text),
 stores vectors in Qdrant, and serves similarity search over an HTTP API.
 
 ## Environment
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `RAG_STACK_URL` | Base URL of the rag-stack API | `http://localhost:8080` |
-| `RAG_STACK_TOKEN` | Bearer token (omit if auth is disabled) | `my-secret-token` |
+| `RAGED_URL` | Base URL of the raged API | `http://localhost:8080` |
+| `RAGED_TOKEN` | Bearer token (omit if auth is disabled) | `my-secret-token` |
 
 ## Pre-flight: Check Connection
 
-Before running queries or indexing, verify rag-stack is reachable:
+Before running queries or indexing, verify raged is reachable:
 
 ```bash
-curl -sf "$RAG_STACK_URL/healthz" | jq .
+curl -sf "$RAGED_URL/healthz" | jq .
 # Expected: {"ok":true}
 ```
 
 Or use the bundled checker script:
 
 ```bash
-node scripts/check-connection.mjs "$RAG_STACK_URL"
+node scripts/check-connection.mjs "$RAGED_URL"
 ```
 
 If the health check fails, remind the user to start the stack:
 
 ```bash
-docker compose up -d   # from the rag-stack repo root
+docker compose up -d   # from the raged repo root
 ```
 ```
 
@@ -283,25 +283,25 @@ Add the following after the pre-flight section:
 ### Basic Query
 
 ```bash
-curl -s -X POST "$RAG_STACK_URL/query" \
+curl -s -X POST "$RAGED_URL/query" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAG_STACK_TOKEN" \
+  -H "Authorization: Bearer $RAGED_TOKEN" \
   -d '{
     "query": "authentication middleware",
     "topK": 5
   }' | jq '.results[] | {score, source, text: (.text | .[0:200])}'
 ```
 
-Omit the `Authorization` header if rag-stack has no token configured.
+Omit the `Authorization` header if raged has no token configured.
 
 ### Query with Filters
 
 Filter by repository:
 
 ```bash
-curl -s -X POST "$RAG_STACK_URL/query" \
+curl -s -X POST "$RAGED_URL/query" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAG_STACK_TOKEN" \
+  -H "Authorization: Bearer $RAGED_TOKEN" \
   -d '{
     "query": "error handling",
     "topK": 5,
@@ -316,9 +316,9 @@ curl -s -X POST "$RAG_STACK_URL/query" \
 Filter by language:
 
 ```bash
-curl -s -X POST "$RAG_STACK_URL/query" \
+curl -s -X POST "$RAGED_URL/query" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAG_STACK_TOKEN" \
+  -H "Authorization: Bearer $RAGED_TOKEN" \
   -d '{
     "query": "database connection",
     "topK": 5,
@@ -333,9 +333,9 @@ curl -s -X POST "$RAG_STACK_URL/query" \
 Filter by path prefix:
 
 ```bash
-curl -s -X POST "$RAG_STACK_URL/query" \
+curl -s -X POST "$RAGED_URL/query" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAG_STACK_TOKEN" \
+  -H "Authorization: Bearer $RAGED_TOKEN" \
   -d '{
     "query": "route handler",
     "topK": 5,
@@ -414,9 +414,9 @@ Indexing clones a Git repo, chunks every source file, embeds each chunk, and sto
 Send files directly to the `/ingest` endpoint:
 
 ```bash
-curl -s -X POST "$RAG_STACK_URL/ingest" \
+curl -s -X POST "$RAGED_URL/ingest" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAG_STACK_TOKEN" \
+  -H "Authorization: Bearer $RAGED_TOKEN" \
   -d '{
     "collection": "docs",
     "items": [
@@ -436,15 +436,15 @@ For bulk indexing, prefer the CLI below — it handles git clone, file scanning,
 
 ### Via the CLI (recommended for full repos)
 
-The rag-stack CLI automates the full pipeline. From the rag-stack repo:
+The raged CLI automates the full pipeline. From the raged repo:
 
 ```bash
 cd cli && npm install && npm run build
 
 node dist/index.js index \
   --repo https://github.com/org/repo.git \
-  --api "$RAG_STACK_URL" \
-  --token "$RAG_STACK_TOKEN" \
+  --api "$RAGED_URL" \
+  --token "$RAGED_TOKEN" \
   --collection docs
 ```
 
@@ -453,7 +453,7 @@ node dist/index.js index \
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--repo`, `-r` | string | **required** | Git URL to clone |
-| `--api` | string | `http://localhost:8080` | rag-stack API URL |
+| `--api` | string | `http://localhost:8080` | raged API URL |
 | `--collection` | string | `docs` | Target Qdrant collection |
 | `--branch` | string | _(default)_ | Branch to clone |
 | `--repoId` | string | _(repo URL)_ | Stable identifier for the repo |
@@ -479,9 +479,9 @@ node dist/index.js index \
 | HTTP Status | Meaning | Action |
 |-------------|---------|--------|
 | `200` | Success | Parse JSON response |
-| `401` | Unauthorized | Check `RAG_STACK_TOKEN` is set correctly |
+| `401` | Unauthorized | Check `RAGED_TOKEN` is set correctly |
 | `400` | Bad request | Check required fields (`query` for /query, `items` for /ingest) |
-| `5xx` | Server error | Check rag-stack logs: `docker compose logs api` |
+| `5xx` | Server error | Check raged logs: `docker compose logs api` |
 | Connection refused | Stack not running | Start with `docker compose up -d` |
 ```
 
@@ -504,7 +504,7 @@ git commit -m "feat(skill): add index instructions and error handling to SKILL.m
 Create `skill/references/REFERENCE.md`:
 
 ```markdown
-# rag-stack API Reference
+# raged API Reference
 
 Detailed reference for advanced usage. The agent loads this on demand for complex scenarios.
 
@@ -600,7 +600,7 @@ Embeds query text, performs vector similarity search.
 
 | Service | Default URL | Purpose |
 |---------|------------|---------|
-| rag-stack API | `http://localhost:8080` | HTTP gateway |
+| raged API | `http://localhost:8080` | HTTP gateway |
 | Qdrant | `http://localhost:6333` | Vector database |
 | Ollama | `http://localhost:11434` | Embedding model |
 
@@ -617,7 +617,7 @@ Embeds query text, performs vector similarity search.
 | `DISTANCE` | `Cosine` | Similarity metric |
 | `EMBED_MODEL` | `nomic-embed-text` | Ollama model name |
 | `PORT` | `8080` | API listen port |
-| `RAG_API_TOKEN` | _(empty)_ | Bearer token (empty = auth disabled) |
+| `RAGED_API_TOKEN` | _(empty)_ | Bearer token (empty = auth disabled) |
 ```
 
 **Step 2: Commit**
@@ -639,7 +639,7 @@ git commit -m "feat(skill): add API reference documentation"
 Create `skill/README.md`:
 
 ```markdown
-# rag-stack OpenClaw Skill
+# raged OpenClaw Skill
 
 An [OpenClaw](https://openclaw.ai/) AgentSkill that gives your agent semantic
 code search over indexed Git repositories.
@@ -649,13 +649,13 @@ code search over indexed Git repositories.
 ### Option A: Symlink (development)
 
 ```bash
-ln -s /path/to/rag-stack/skill ~/.openclaw/skills/rag-stack
+ln -s /path/to/raged/skill ~/.openclaw/skills/raged
 ```
 
 ### Option B: Copy
 
 ```bash
-cp -r /path/to/rag-stack/skill ~/.openclaw/skills/rag-stack
+cp -r /path/to/raged/skill ~/.openclaw/skills/raged
 ```
 
 ## Configure
@@ -666,11 +666,11 @@ Add to `~/.openclaw/openclaw.json`:
 {
   "skills": {
     "entries": {
-      "rag-stack": {
+      "raged": {
         "enabled": true,
         "env": {
-          "RAG_STACK_URL": "http://localhost:8080",
-          "RAG_STACK_TOKEN": ""
+          "RAGED_URL": "http://localhost:8080",
+          "RAGED_TOKEN": ""
         }
       }
     }
@@ -678,11 +678,11 @@ Add to `~/.openclaw/openclaw.json`:
 }
 ```
 
-Set `RAG_STACK_TOKEN` only if your rag-stack instance has `RAG_API_TOKEN` configured.
+Set `RAGED_TOKEN` only if your raged instance has `RAGED_API_TOKEN` configured.
 
 ## Prerequisites
 
-1. A running rag-stack instance: `docker compose up -d` (from the rag-stack repo)
+1. A running raged instance: `docker compose up -d` (from the raged repo)
 2. `curl` on PATH
 3. The Ollama embedding model pulled: `curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'`
 
@@ -690,7 +690,7 @@ Set `RAG_STACK_TOKEN` only if your rag-stack instance has `RAG_API_TOKEN` config
 
 ```bash
 # In an OpenClaw session, ask:
-"Is rag-stack running?"
+"Is raged running?"
 # The agent will call /healthz and report status.
 ```
 ```

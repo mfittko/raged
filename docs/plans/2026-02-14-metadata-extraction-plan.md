@@ -1147,7 +1147,7 @@ git commit -m "feat(api): add enrichment status, stats, enqueue, graph expand, a
 
 ## Phase 5: CLI Enhancements
 
-### Task 13: Add `rag-index ingest` command
+### Task 13: Add `raged-index ingest` command
 
 **Files:**
 - Modify: `cli/src/index.ts`
@@ -1183,7 +1183,7 @@ git commit -m "feat(cli): add ingest command for arbitrary file ingestion"
 
 ---
 
-### Task 14: Add `rag-index enrich` command
+### Task 14: Add `raged-index enrich` command
 
 **Files:**
 - Modify: `cli/src/index.ts`
@@ -1204,7 +1204,7 @@ git commit -m "feat(cli): add enrich command for triggering and monitoring enric
 
 ---
 
-### Task 15: Add `rag-index graph` command
+### Task 15: Add `raged-index graph` command
 
 **Files:**
 - Modify: `cli/src/index.ts`
@@ -1263,7 +1263,7 @@ git commit -m "docs: update API reference with enrichment and graph endpoints"
 **Files:**
 - Modify: `docs/03-cli.md`
 
-Add documentation for `rag-index ingest`, `rag-index enrich`, `rag-index graph` commands and the new flags on `rag-index index`.
+Add documentation for `raged-index ingest`, `raged-index enrich`, `raged-index graph` commands and the new flags on `raged-index index`.
 
 **Step 1: Commit**
 
@@ -1297,7 +1297,7 @@ git commit -m "docs: update architecture and vision with enrichment pipeline and
 - Modify: `skill/SKILL.md`
 - Modify: `skill/skills/rag-stack/SKILL.md`
 
-Update the skill definitions to document the new capabilities: enrichment status checking, graph queries, `--enrich` and `--doc-type` flags, `rag-index ingest` for non-repo content.
+Update the skill definitions to document the new capabilities: enrichment status checking, graph queries, `--enrich` and `--doc-type` flags, `raged-index ingest` for non-repo content.
 
 **Step 1: Commit**
 

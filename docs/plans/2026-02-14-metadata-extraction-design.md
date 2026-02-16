@@ -401,7 +401,7 @@ Trigger enrichment for already-ingested content. Scans Qdrant for items with `en
 
 ## CLI Changes
 
-### Updated `rag-index index`
+### Updated `raged-index index`
 
 | New Flag | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -409,15 +409,15 @@ Trigger enrichment for already-ingested content. Scans Qdrant for items with `en
 | `--no-enrich` | - | - | Skip enrichment (current behavior) |
 | `--doc-type` | string | auto-detect | Force document type for all files |
 
-### New `rag-index ingest`
+### New `raged-index ingest`
 
 Ingest arbitrary files from disk (not just git repos):
 
 ```bash
-rag-index ingest --file ./notes/standup.md
-rag-index ingest --dir ./knowledge/
-rag-index ingest --file ./export.json --doc-type slack
-rag-index ingest --file ./diagram.png
+raged-index ingest --file ./notes/standup.md
+raged-index ingest --dir ./knowledge/
+raged-index ingest --file ./export.json --doc-type slack
+raged-index ingest --file ./diagram.png
 ```
 
 | Flag | Type | Default | Description |
@@ -430,20 +430,20 @@ rag-index ingest --file ./diagram.png
 | `--token` | string | env | Bearer token |
 | `--no-enrich` | - | - | Skip enrichment |
 
-### New `rag-index enrich`
+### New `raged-index enrich`
 
 ```bash
-rag-index enrich --api http://localhost:8080
-rag-index enrich --collection docs
-rag-index enrich --force
-rag-index enrich --stats-only
+raged-index enrich --api http://localhost:8080
+raged-index enrich --collection docs
+raged-index enrich --force
+raged-index enrich --stats-only
 ```
 
-### New `rag-index graph`
+### New `raged-index graph`
 
 ```bash
-rag-index graph --entity "AuthService"
-rag-index graph --entity "AuthService" --depth 2
+raged-index graph --entity "AuthService"
+raged-index graph --entity "AuthService" --depth 2
 ```
 
 ## Error Handling
@@ -458,7 +458,7 @@ rag-index graph --entity "AuthService" --depth 2
 | Image too large for multimodal LLM | Resize before sending, note in metadata |
 | Unsupported document type | Fall back to generic "text" extraction |
 
-Dead letter queue: after 3 failed attempts, tasks move to `enrichment:dead-letter` in Redis. `rag-index enrich --stats-only` shows stats for inspection.
+Dead letter queue: after 3 failed attempts, tasks move to `enrichment:dead-letter` in Redis. `raged-index enrich --stats-only` shows stats for inspection.
 
 ## Observability
 
@@ -507,7 +507,7 @@ services:
       DISTANCE: "Cosine"
       EMBED_MODEL: "nomic-embed-text"
       PORT: "8080"
-      RAG_API_TOKEN: ""
+      RAGED_API_TOKEN: ""
       ENRICHMENT_ENABLED: "false"              # NEW (opt-in)
     ports: ["8080:8080"]
     depends_on: [qdrant, ollama]
@@ -658,10 +658,10 @@ The API configmap conditionally injects `REDIS_URL` when enrichment is enabled. 
 
 ```bash
 # Without enrichment (current behavior)
-helm install rag-stack ./chart
+helm install raged ./chart
 
 # With enrichment
-helm install rag-stack ./chart \
+helm install raged ./chart \
   --set enrichment.enabled=true \
   --set neo4j.auth.password=secretpassword \
   --set enrichment.worker.extractor.provider=anthropic \

@@ -31,8 +31,8 @@ flowchart TD
 **Cause:** Token mismatch between client and server.
 
 **Fix:**
-1. Check that `RAG_API_TOKEN` is set in the API environment (Docker Compose or Helm)
-2. Pass `--token <value>` to CLI commands, or set `RAG_API_TOKEN` in your shell
+1. Check that `RAGED_API_TOKEN` is set in the API environment (Docker Compose or Helm)
+2. Pass `--token <value>` to CLI commands, or set `RAGED_API_TOKEN` in your shell
 3. For Helm: verify `api.auth.enabled=true` and `api.auth.token` is set
 
 ```bash

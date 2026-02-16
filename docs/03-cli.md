@@ -1,4 +1,4 @@
-# CLI (rag-index)
+# CLI (raged-index)
 
 Command-line tool for indexing Git repositories, ingesting arbitrary files, and querying the RAG API.
 
@@ -27,7 +27,7 @@ node dist/index.js index --repo <git-url> [options]
 | `--collection` | `docs` | Qdrant collection name |
 | `--branch` | _(default branch)_ | Git branch to clone |
 | `--repoId` | _(repo URL)_ | Stable identifier for this repo |
-| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+| `--token` | _(env `RAGED_API_TOKEN`)_ | Bearer token for auth |
 | `--include` | _(all)_ | Only index files matching this path prefix |
 | `--exclude` | _(none)_ | Skip files matching this path prefix |
 | `--maxFiles` | `4000` | Maximum files to process |
@@ -54,7 +54,7 @@ node dist/index.js query --q "<search text>" [options]
 | `--repoId` | _(none)_ | Filter by repository ID |
 | `--pathPrefix` | _(none)_ | Filter by file path prefix |
 | `--lang` | _(none)_ | Filter by language |
-| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+| `--token` | _(env `RAGED_API_TOKEN`)_ | Bearer token for auth |
 
 ### ingest
 
@@ -71,7 +71,7 @@ node dist/index.js ingest --dir <path> [options]
 | `--dir` | - | Directory to ingest (mutually exclusive with --file) |
 | `--api` | `http://localhost:8080` | RAG API URL |
 | `--collection` | `docs` | Qdrant collection name |
-| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+| `--token` | _(env `RAGED_API_TOKEN`)_ | Bearer token for auth |
 | `--maxFiles` | `4000` | Maximum files to process from directory |
 | `--enrich` | `true` | Enable async enrichment |
 | `--no-enrich` | - | Disable async enrichment |
@@ -95,7 +95,7 @@ node dist/index.js enrich [options]
 |------|---------|-------------|
 | `--api` | `http://localhost:8080` | RAG API URL |
 | `--collection` | `docs` | Qdrant collection name |
-| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+| `--token` | _(env `RAGED_API_TOKEN`)_ | Bearer token for auth |
 | `--force` | `false` | Re-enqueue all items (including already-enriched) |
 | `--stats-only` | `false` | Show enrichment stats without enqueueing |
 
@@ -130,7 +130,7 @@ node dist/index.js graph --entity <name> [options]
 |------|---------|-------------|
 | `--entity` | _(required)_ | Entity name to look up |
 | `--api` | `http://localhost:8080` | RAG API URL |
-| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+| `--token` | _(env `RAGED_API_TOKEN`)_ | Bearer token for auth |
 
 **Example:**
 
@@ -181,7 +181,7 @@ flowchart LR
 Two ways to provide the auth token:
 
 1. **Flag:** `--token my-token`
-2. **Environment variable:** `export RAG_API_TOKEN=my-token`
+2. **Environment variable:** `export RAGED_API_TOKEN=my-token`
 
 The flag takes precedence over the environment variable.
 

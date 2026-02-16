@@ -13,7 +13,7 @@ This project is currently greenfield and not yet deployed, so no backward-compat
 ```mermaid
 graph TD
     EXT[Chrome Extension] -->|HTTP| API
-    CLI[rag-index CLI] -->|HTTP| API
+    CLI[raged-index CLI] -->|HTTP| API
     AGENT[AI Agents] -->|HTTP| API
 
     API[RAG API] -->|embed| OL[Ollama]
@@ -305,7 +305,7 @@ Worker behavior: if this returns zero rows, sleep 1 s before retrying to avoid b
 
 The API is the **sole writer** to Postgres. The worker communicates with the database exclusively through internal HTTP endpoints on the API. This eliminates dual-write complexity, keeps schema migration ownership in one place, and removes `asyncpg`/`pgvector` from the worker's dependency tree.
 
-All internal endpoints require `RAG_API_TOKEN` auth (same as public endpoints).
+All internal endpoints require `RAGED_API_TOKEN` auth (same as public endpoints).
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|

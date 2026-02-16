@@ -1,6 +1,6 @@
 # Local Development
 
-Run the full rag-stack locally using Docker Compose. No cloud services required.
+Run the full raged locally using Docker Compose. No cloud services required.
 
 ## Startup
 
@@ -94,14 +94,14 @@ curl -s http://localhost:8080/enrichment/stats
 
 ## Optional: Enable Auth Locally
 
-Set `RAG_API_TOKEN` in `docker-compose.yml` under the `api` service:
+Set `RAGED_API_TOKEN` in `docker-compose.yml` under the `api` service:
 
 ```yaml
 environment:
-  RAG_API_TOKEN: "my-dev-token"
+  RAGED_API_TOKEN: "my-dev-token"
 ```
 
-Then pass `--token my-dev-token` to CLI commands (or set `RAG_API_TOKEN` env var).
+Then pass `--token my-dev-token` to CLI commands (or set `RAGED_API_TOKEN` env var).
 
 ## Optional: Configure Enrichment
 

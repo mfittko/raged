@@ -6,7 +6,7 @@ HTTP API for the rag-stack RAG service.
 
 ## Authentication
 
-When `RAG_API_TOKEN` is set on the server, all endpoints except `/healthz` require a bearer token:
+When `RAGED_API_TOKEN` is set on the server, all endpoints except `/healthz` require a bearer token:
 
 ```
 Authorization: Bearer <token>

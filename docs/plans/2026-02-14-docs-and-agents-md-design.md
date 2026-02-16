@@ -5,7 +5,7 @@
 
 ## Goal
 
-Expand rag-stack documentation to reflect the full project vision (multi-agent memory hub), add Mermaid diagrams throughout, and create layered `AGENTS.md` files that guide AI coding agents with principles and concrete rules.
+Expand raged documentation to reflect the full project vision (multi-agent memory hub), add Mermaid diagrams throughout, and create layered `AGENTS.md` files that guide AI coding agents with principles and concrete rules.
 
 ## Approach
 
@@ -17,7 +17,7 @@ Expand rag-stack documentation to reflect the full project vision (multi-agent m
 
 High-level guidance that applies everywhere:
 
-- **Project identity:** rag-stack is a multi-agent memory hub — a shared memory layer for AI coding agents backed by vector search
+- **Project identity:** raged is a multi-agent memory hub — a shared memory layer for AI coding agents backed by vector search
 - **Core principles:** SOLID, KISS, DRY, SRP, YAGNI — each with a one-liner and a concrete "in this project, that means..." example
 - **TypeScript conventions:** strict mode, ES modules, no `any`, prefer interfaces for public APIs
 - **Git conventions:** conventional commits, small focused PRs, no force-push to main
@@ -90,7 +90,7 @@ High-level guidance that applies everywhere:
 
 ## Vision: Multi-Agent Memory Hub
 
-rag-stack evolves from a CLI+API MVP into a shared memory layer for any AI coding agent:
+raged evolves from a CLI+API MVP into a shared memory layer for any AI coding agent:
 
 - **v0.5 (current):** CLI indexer + Fastify API + Qdrant + Ollama, Claude Code skill
 - **v1.0:** Auth/multi-tenancy, multiple embedding providers, plugin architecture for agents

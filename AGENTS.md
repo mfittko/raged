@@ -1,8 +1,8 @@
-# AGENTS.md — rag-stack
+# AGENTS.md — raged
 
 ## Project Identity
 
-rag-stack is a **multi-agent memory hub**: a shared retrieval-augmented generation (RAG) layer that any AI coding agent can use to store and retrieve grounded context from indexed repositories. The API is stateless; persistent state lives in external data services (currently Postgres, with optional object storage).
+raged is a **multi-agent memory hub**: a shared retrieval-augmented generation (RAG) layer that any AI coding agent can use to store and retrieve grounded context from indexed repositories. The API is stateless; persistent state lives in external data services (currently Postgres, with optional object storage).
 
 ## Core Principles
 

@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Create layered AGENTS.md files establishing coding principles and rules, then expand all documentation with Mermaid diagrams and vision content to reflect rag-stack's direction as a multi-agent memory hub.
+**Goal:** Create layered AGENTS.md files establishing coding principles and rules, then expand all documentation with Mermaid diagrams and vision content to reflect raged's direction as a multi-agent memory hub.
 
 **Architecture:** AGENTS.md first (root → subfolders) to establish conventions, then documentation expansion (new docs → polish existing). Each task is one file, committed individually.
 
@@ -18,11 +18,11 @@
 **Step 1: Write the root AGENTS.md**
 
 ```markdown
-# AGENTS.md — rag-stack
+# AGENTS.md — raged
 
 ## Project Identity
 
-rag-stack is a **multi-agent memory hub**: a shared retrieval-augmented generation (RAG) layer that any AI coding agent can use to store and retrieve grounded context from indexed repositories. The API is stateless; all persistent state lives in Qdrant.
+raged is a **multi-agent memory hub**: a shared retrieval-augmented generation (RAG) layer that any AI coding agent can use to store and retrieve grounded context from indexed repositories. The API is stateless; all persistent state lives in Qdrant.
 
 ## Core Principles
 
@@ -178,7 +178,7 @@ All configuration is via environment variables. Document every env var in this f
 | `DISTANCE` | `Cosine` | Qdrant distance metric |
 | `EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
 | `PORT` | `8080` | API listen port |
-| `RAG_API_TOKEN` | _(empty)_ | Bearer token for auth (empty = auth disabled) |
+| `RAGED_API_TOKEN` | _(empty)_ | Bearer token for auth (empty = auth disabled) |
 ```
 
 **Step 2: Verify**
@@ -233,7 +233,7 @@ Every CLI command must be represented in the `usage()` function with its full fl
 Error messages must tell the user what to do, not just what failed.
 
 - Bad: `Error: 401`
-- Good: `Error: 401 Unauthorized — pass --token or set RAG_API_TOKEN`
+- Good: `Error: 401 Unauthorized — pass --token or set RAGED_API_TOKEN`
 
 ### File Scanning
 
@@ -250,7 +250,7 @@ Ingest files in batches (currently 50 items) to avoid overwhelming the API with 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RAG_API_TOKEN` | _(empty)_ | Bearer token (alternative to `--token` flag) |
+| `RAGED_API_TOKEN` | _(empty)_ | Bearer token (alternative to `--token` flag) |
 ```
 
 **Step 2: Verify**
@@ -313,7 +313,7 @@ All templates must pass `helm lint ./chart` cleanly. Run it before committing an
 
 ### Resource Naming Convention
 
-All Kubernetes resources use the pattern: `{{ include "rag-stack.fullname" . }}-<component>` (e.g., `rag-stack-api`, `rag-stack-qdrant`).
+All Kubernetes resources use the pattern: `{{ include "raged.fullname" . }}-<component>` (e.g., `raged-api`, `raged-qdrant`).
 
 ### Conditional Components
 
@@ -427,17 +427,17 @@ git commit -m "docs: add docs/AGENTS.md with documentation rules"
 ```markdown
 # Vision
 
-rag-stack is a shared memory layer for AI coding agents — a retrieval-augmented generation (RAG) system that stores and retrieves grounded context from indexed repositories.
+raged is a shared memory layer for AI coding agents — a retrieval-augmented generation (RAG) system that stores and retrieves grounded context from indexed repositories.
 
 ## Why
 
-AI coding agents work best with relevant context, but stuffing entire repositories into a model's context window is wasteful and expensive. rag-stack keeps the heavy retrieval work outside the model loop: index once, query many times, return only what's relevant.
+AI coding agents work best with relevant context, but stuffing entire repositories into a model's context window is wasteful and expensive. raged keeps the heavy retrieval work outside the model loop: index once, query many times, return only what's relevant.
 
 ## Architecture Overview
 
 ```mermaid
 graph TD
-    A1[AI Agent 1<br/>Claude Code] -->|query| CLI[rag-index CLI]
+    A1[AI Agent 1<br/>Claude Code] -->|query| CLI[raged-index CLI]
     A2[AI Agent 2<br/>Other Agent] -->|query| CLI
     A3[AI Agent N] -->|query| CLI
     CLI -->|HTTP| API[RAG API<br/>Fastify]
@@ -492,7 +492,7 @@ The full vision:
 
 - **Stateless API, stateful storage.** The API process holds no state. Scale it horizontally.
 - **Local-first.** Docker Compose must always work. Cloud deployment is optional.
-- **Agent-agnostic.** Not tied to Claude Code. Any agent that can shell out to a CLI or call HTTP can use rag-stack.
+- **Agent-agnostic.** Not tied to Claude Code. Any agent that can shell out to a CLI or call HTTP can use raged.
 - **Minimal dependencies.** Every dependency must justify its existence.
 - **Security by default.** Auth is optional locally, mandatory in production.
 ```
@@ -521,13 +521,13 @@ git commit -m "docs: add vision document with roadmap and architecture diagram"
 Replace the entire contents of `README.md` with:
 
 ```markdown
-# rag-stack
+# raged
 
 A shared memory layer for AI coding agents — index repositories, embed code, and retrieve relevant context via semantic search.
 
 ```mermaid
 graph LR
-    Agent[AI Agent] -->|"rag-index query"| CLI[CLI]
+    Agent[AI Agent] -->|"raged-index query"| CLI[CLI]
     CLI -->|HTTP| API[RAG API]
     API -->|embed| Ollama
     API -->|search| Qdrant
@@ -593,11 +593,11 @@ node dist/index.js query \
 
 | Doc | Topic |
 |-----|-------|
-| [Vision & Roadmap](docs/00-vision.md) | Where rag-stack is headed |
+| [Vision & Roadmap](docs/00-vision.md) | Where raged is headed |
 | [Architecture](docs/01-architecture.md) | Components, data flow, security |
 | [Local Development](docs/02-local-dev.md) | Docker Compose setup |
 | [CLI Reference](docs/03-cli.md) | Commands, flags, examples |
-| [Claude Code Skill](docs/04-claude-skills.md) | Using rag-stack with Claude Code |
+| [Claude Code Skill](docs/04-claude-skills.md) | Using raged with Claude Code |
 | [Helm Deployment](docs/05-helm-remote.md) | Kubernetes + Ingress + auth |
 | [Troubleshooting](docs/06-troubleshooting.md) | Common issues and fixes |
 | [In-Cluster Indexing](docs/07-indexing-in-cluster.md) | Indexing from inside Kubernetes |
@@ -635,13 +635,13 @@ Replace the entire contents with:
 ```markdown
 # Architecture
 
-rag-stack is a four-component system: CLI, API, vector database, and embedding runtime.
+raged is a four-component system: CLI, API, vector database, and embedding runtime.
 
 ## Component Diagram
 
 ```mermaid
 graph TD
-    CLI[rag-index CLI] -->|"POST /ingest"| API[RAG API<br/>:8080]
+    CLI[raged-index CLI] -->|"POST /ingest"| API[RAG API<br/>:8080]
     CLI -->|"POST /query"| API
     API -->|"POST /api/embeddings"| OL[Ollama<br/>:11434]
     API -->|"upsert / search"| QD[Qdrant<br/>:6333]
@@ -680,7 +680,7 @@ Metadata payload per point:
 
 Runs the `nomic-embed-text` model locally. The API calls Ollama's `/api/embeddings` endpoint for each text chunk. Produces 768-dimensional vectors.
 
-### CLI (rag-index)
+### CLI (raged-index)
 
 Command-line tool for indexing and querying. Clones Git repos to a temp directory, scans for text files, sends them in batches to the API's `/ingest` endpoint.
 
@@ -694,7 +694,7 @@ sequenceDiagram
     participant O as Ollama
     participant Q as Qdrant
 
-    U->>C: rag-index index --repo <url>
+    U->>C: raged-index index --repo <url>
     C->>C: git clone (shallow)
     C->>C: Scan files, filter, read text
     loop Batch of 50 files
@@ -721,7 +721,7 @@ sequenceDiagram
     participant O as Ollama
     participant Q as Qdrant
 
-    U->>C: rag-index query --q "auth flow"
+    U->>C: raged-index query --q "auth flow"
     C->>A: POST /query { query, topK }
     A->>O: POST /api/embeddings { prompt }
     O-->>A: 768d vector
@@ -739,7 +739,7 @@ flowchart LR
     H -->|No| R401[401 Unauthorized]
     H -->|Yes| P{Bearer prefix?}
     P -->|No| R401
-    P -->|Yes| T{Timing-safe<br/>compare with<br/>RAG_API_TOKEN}
+    P -->|Yes| T{Timing-safe<br/>compare with<br/>RAGED_API_TOKEN}
     T -->|Mismatch| R401
     T -->|Match| OK[Request proceeds]
 
@@ -749,7 +749,7 @@ flowchart LR
     style OK fill:#c8e6c9
 ```
 
-- Token auth is optional (disabled when `RAG_API_TOKEN` is empty)
+- Token auth is optional (disabled when `RAGED_API_TOKEN` is empty)
 - `/healthz` always bypasses auth
 - Token comparison uses timing-safe algorithm to prevent timing attacks
 - Tokens are provided via environment variable, never hardcoded
@@ -781,7 +781,7 @@ Replace the entire contents with:
 ```markdown
 # Local Development
 
-Run the full rag-stack locally using Docker Compose. No cloud services required.
+Run the full raged locally using Docker Compose. No cloud services required.
 
 ## Startup
 
@@ -829,14 +829,14 @@ curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'
 
 ## Optional: Enable Auth Locally
 
-Set `RAG_API_TOKEN` in `docker-compose.yml` under the `api` service:
+Set `RAGED_API_TOKEN` in `docker-compose.yml` under the `api` service:
 
 ```yaml
 environment:
-  RAG_API_TOKEN: "my-dev-token"
+  RAGED_API_TOKEN: "my-dev-token"
 ```
 
-Then pass `--token my-dev-token` to CLI commands (or set `RAG_API_TOKEN` env var).
+Then pass `--token my-dev-token` to CLI commands (or set `RAGED_API_TOKEN` env var).
 
 ## Tear Down
 
@@ -893,7 +893,7 @@ git commit -m "docs: expand local dev doc with startup diagram and development i
 Replace the entire contents with:
 
 ```markdown
-# CLI (rag-index)
+# CLI (raged-index)
 
 Command-line tool for indexing Git repositories and querying the RAG API.
 
@@ -922,7 +922,7 @@ node dist/index.js index --repo <git-url> [options]
 | `--collection` | `docs` | Qdrant collection name |
 | `--branch` | _(default branch)_ | Git branch to clone |
 | `--repoId` | _(repo URL)_ | Stable identifier for this repo |
-| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+| `--token` | _(env `RAGED_API_TOKEN`)_ | Bearer token for auth |
 | `--include` | _(all)_ | Only index files matching this path prefix |
 | `--exclude` | _(none)_ | Skip files matching this path prefix |
 | `--maxFiles` | `4000` | Maximum files to process |
@@ -946,7 +946,7 @@ node dist/index.js query --q "<search text>" [options]
 | `--repoId` | _(none)_ | Filter by repository ID |
 | `--pathPrefix` | _(none)_ | Filter by file path prefix |
 | `--lang` | _(none)_ | Filter by language |
-| `--token` | _(env `RAG_API_TOKEN`)_ | Bearer token for auth |
+| `--token` | _(env `RAGED_API_TOKEN`)_ | Bearer token for auth |
 
 ## Index Lifecycle
 
@@ -975,7 +975,7 @@ flowchart LR
 Two ways to provide the auth token:
 
 1. **Flag:** `--token my-token`
-2. **Environment variable:** `export RAG_API_TOKEN=my-token`
+2. **Environment variable:** `export RAGED_API_TOKEN=my-token`
 
 The flag takes precedence over the environment variable.
 
@@ -1027,7 +1027,7 @@ Replace the entire contents with:
 ```markdown
 # Claude Code Skill
 
-rag-stack includes a Claude Code skill that lets Claude query indexed repositories for relevant context.
+raged includes a Claude Code skill that lets Claude query indexed repositories for relevant context.
 
 ## How It Works
 
@@ -1036,12 +1036,12 @@ sequenceDiagram
     participant U as User
     participant C as Claude Code
     participant S as rag-memory Skill
-    participant CLI as rag-index CLI
+    participant CLI as raged-index CLI
     participant API as RAG API
 
     U->>C: "How does auth work in project X?"
     C->>S: Invoke skill
-    S->>CLI: rag-index query --q "auth" --topK 5
+    S->>CLI: raged-index query --q "auth" --topK 5
     CLI->>API: POST /query
     API-->>CLI: Relevant chunks
     CLI-->>S: Formatted results
@@ -1059,7 +1059,7 @@ sequenceDiagram
 
 ### Local
 
-If running rag-stack via Docker Compose on the same machine:
+If running raged via Docker Compose on the same machine:
 
 ```bash
 # No configuration needed — defaults work
@@ -1072,7 +1072,7 @@ Set environment variables for your shell (or in your Claude Code configuration):
 
 ```bash
 export RAG_API_URL=https://rag.example.com
-export RAG_API_TOKEN=your-token-here
+export RAGED_API_TOKEN=your-token-here
 ```
 
 ## Usage
@@ -1083,20 +1083,20 @@ The skill is invoked automatically when Claude determines it needs codebase cont
 
 Claude will run:
 ```bash
-rag-index query \
+raged-index query \
   --api "${RAG_API_URL:-http://localhost:8080}" \
   --q "authentication implementation" \
   --topK 5 \
-  --token "${RAG_API_TOKEN:-}"
+  --token "${RAGED_API_TOKEN:-}"
 ```
 
 ## Multi-Agent Context
 
-rag-stack is designed to be agent-agnostic. While the current skill targets Claude Code, any agent that can execute shell commands can use the CLI:
+raged is designed to be agent-agnostic. While the current skill targets Claude Code, any agent that can execute shell commands can use the CLI:
 
 ```bash
 # Any agent can query
-rag-index query --api <url> --q "<question>" --topK 5
+raged-index query --api <url> --q "<question>" --topK 5
 
 # Or call the HTTP API directly
 curl -X POST https://rag.example.com/query \
@@ -1134,7 +1134,7 @@ Replace the entire contents with:
 ```markdown
 # Helm Deployment (Remote)
 
-Deploy rag-stack to Kubernetes with Ingress and token authentication.
+Deploy raged to Kubernetes with Ingress and token authentication.
 
 ## Deployment Topology
 
@@ -1175,8 +1175,8 @@ docker build -t your-registry/rag-api:0.5.0 ./api
 docker push your-registry/rag-api:0.5.0
 
 # CLI (for in-cluster indexing)
-docker build -t your-registry/rag-index:0.5.0 ./cli
-docker push your-registry/rag-index:0.5.0
+docker build -t your-registry/raged-index:0.5.0 ./cli
+docker push your-registry/raged-index:0.5.0
 ```
 
 ## Install
@@ -1283,8 +1283,8 @@ flowchart TD
 **Cause:** Token mismatch between client and server.
 
 **Fix:**
-1. Check that `RAG_API_TOKEN` is set in the API environment (Docker Compose or Helm)
-2. Pass `--token <value>` to CLI commands, or set `RAG_API_TOKEN` in your shell
+1. Check that `RAGED_API_TOKEN` is set in the API environment (Docker Compose or Helm)
+2. Pass `--token <value>` to CLI commands, or set `RAGED_API_TOKEN` in your shell
 3. For Helm: verify `api.auth.enabled=true` and `api.auth.token` is set
 
 ```bash
@@ -1411,7 +1411,7 @@ helm upgrade --install rag ./chart -n rag --create-namespace \
   --set api.auth.enabled=true \
   --set api.auth.token=REPLACE_ME \
   --set indexer.enabled=true \
-  --set indexer.image.repository=your-registry/rag-index \
+  --set indexer.image.repository=your-registry/raged-index \
   --set indexer.image.tag=0.5.0 \
   --set indexer.repoUrl=https://github.com/<org>/<repo>.git \
   --set indexer.repoId=my-repo \
@@ -1423,7 +1423,7 @@ helm upgrade --install rag ./chart -n rag --create-namespace \
 | Value | Default | Description |
 |-------|---------|-------------|
 | `indexer.enabled` | `false` | Create the indexer Job |
-| `indexer.image.repository` | `your-registry/rag-index` | Indexer image |
+| `indexer.image.repository` | `your-registry/raged-index` | Indexer image |
 | `indexer.image.tag` | `0.5.0` | Indexer image tag |
 | `indexer.repoUrl` | `""` | Git repository URL to index |
 | `indexer.repoId` | `""` | Stable identifier for the repo |
@@ -1450,7 +1450,7 @@ For private repos, you need to provide Git SSH credentials to the indexer Job. T
 kubectl get jobs -n rag
 
 # View indexer logs
-kubectl logs -n rag -l app=rag-stack-indexer --tail 100
+kubectl logs -n rag -l app=raged-indexer --tail 100
 ```
 ```
 
@@ -1478,7 +1478,7 @@ git commit -m "docs: expand in-cluster indexing doc with sequence diagram and va
 ```markdown
 # Contributing
 
-How to develop, test, and submit changes to rag-stack.
+How to develop, test, and submit changes to raged.
 
 ## Development Setup
 
@@ -1492,8 +1492,8 @@ How to develop, test, and submit changes to rag-stack.
 
 ```bash
 # Clone the repo
-git clone https://github.com/<org>/rag-stack.git
-cd rag-stack
+git clone https://github.com/<org>/raged.git
+cd raged
 
 # Start infrastructure
 docker compose up -d
@@ -1558,7 +1558,7 @@ Keep the first line under 72 characters. Add a body for complex changes.
 ## Project Structure
 
 ```
-rag-stack/
+raged/
 ├── api/          → Fastify RAG API (see api/AGENTS.md)
 ├── cli/          → CLI indexer tool (see cli/AGENTS.md)
 ├── chart/        → Helm chart (see chart/AGENTS.md)
@@ -1615,13 +1615,13 @@ git commit -m "docs: add contributing guide with workflow diagram and convention
 ```markdown
 # API Reference
 
-HTTP API for the rag-stack RAG service.
+HTTP API for the raged RAG service.
 
 **Base URL:** `http://localhost:8080` (local) or your Ingress hostname (remote)
 
 ## Authentication
 
-When `RAG_API_TOKEN` is set on the server, all endpoints except `/healthz` require a bearer token:
+When `RAGED_API_TOKEN` is set on the server, all endpoints except `/healthz` require a bearer token:
 
 ```
 Authorization: Bearer <token>
