@@ -122,7 +122,7 @@ async def test_submit_result_success(mock_httpx_client):
     mock_httpx_client.post.assert_called_once()
     call_args = mock_httpx_client.post.call_args
     assert call_args[0][0] == "/internal/tasks/task-123/result"
-    
+
     payload = call_args[1]["json"]
     assert payload["chunkId"] == "doc-123:0"
     assert payload["collection"] == "default"

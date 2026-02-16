@@ -129,7 +129,7 @@ async def run_document_level_extraction(
 
     IMPORTANT LIMITATION: Currently only has access to the last chunk's text.
     For multi-chunk documents, entity extraction and summarization quality may be reduced.
-    
+
     TODO: API should return all chunk texts in the claim response to enable
     full-document analysis. This is tracked in the parent issue for complete migration.
 
@@ -178,11 +178,13 @@ async def run_document_level_extraction(
             entity_desc = entity.get("description", "")
 
             if entity_name:
-                entities.append({
-                    "name": entity_name,
-                    "type": entity_type,
-                    "description": entity_desc,
-                })
+                entities.append(
+                    {
+                        "name": entity_name,
+                        "type": entity_type,
+                        "description": entity_desc,
+                    }
+                )
 
         # Format relationships for API
         relationships = []
@@ -193,12 +195,14 @@ async def run_document_level_extraction(
             rel_desc = rel.get("description", "")
 
             if source_entity and target_entity:
-                relationships.append({
-                    "source": source_entity,
-                    "target": target_entity,
-                    "type": rel_type,
-                    "description": rel_desc,
-                })
+                relationships.append(
+                    {
+                        "source": source_entity,
+                        "target": target_entity,
+                        "type": rel_type,
+                        "description": rel_desc,
+                    }
+                )
 
         logger.info(
             f"Completed document-level extraction for {base_id}: "

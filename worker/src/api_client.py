@@ -24,7 +24,7 @@ def get_client() -> httpx.AsyncClient:
         headers = {}
         if API_TOKEN:
             headers["Authorization"] = f"Bearer {API_TOKEN}"
-        
+
         _client = httpx.AsyncClient(
             base_url=API_URL,
             headers=headers,
@@ -73,7 +73,7 @@ async def claim_task(worker_id: str) -> dict[str, Any] | None:
 
         # Build task payload combining task metadata and chunks
         payload = task_data.get("payload", {})
-        
+
         # Find the chunk text for this specific chunk
         chunk_index = payload.get("chunkIndex", 0)
         chunk_text = ""
@@ -207,8 +207,7 @@ async def recover_stale() -> int:
 
     except httpx.HTTPStatusError as e:
         logger.error(
-            f"HTTP error recovering stale tasks: "
-            f"{e.response.status_code} {e.response.text}"
+            f"HTTP error recovering stale tasks: {e.response.status_code} {e.response.text}"
         )
         raise
     except Exception as e:

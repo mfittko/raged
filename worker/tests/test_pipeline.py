@@ -178,9 +178,7 @@ async def test_run_document_level_extraction():
         )
 
         # Run extraction
-        result = await run_document_level_extraction(
-            "base-id", "code", "test text", 1, "test.py"
-        )
+        result = await run_document_level_extraction("base-id", "code", "test text", 1, "test.py")
 
         # Verify result structure
         assert "tier3" in result
