@@ -11,6 +11,15 @@ export function registerAuth(app: FastifyInstance) {
   const token = process.env.RAGED_API_TOKEN || "";
   if (!token) return;
 
+  // Warn if token is too short
+  const MIN_TOKEN_LENGTH = 16;
+  if (token.length < MIN_TOKEN_LENGTH) {
+    app.log.warn(
+      `RAGED_API_TOKEN is only ${token.length} characters. ` +
+      `For security, use at least ${MIN_TOKEN_LENGTH} characters.`
+    );
+  }
+
   app.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.method === "GET" && req.url.startsWith("/healthz")) return;
 

@@ -1,6 +1,6 @@
 import os
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://rag:rag@localhost:5432/ragstack")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://raged:raged@localhost:5432/raged")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
 EXTRACTOR_PROVIDER = os.environ.get("EXTRACTOR_PROVIDER", "ollama")
