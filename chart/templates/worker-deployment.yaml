@@ -75,7 +75,7 @@ spec:
                   import urllib.request
                   import urllib.parse
                   try:
-                      url = urllib.parse.urljoin(os.environ['API_URL'], 'healthz')
+                      url = urllib.parse.urljoin(os.environ['API_URL'], '/healthz')
                       response = urllib.request.urlopen(url, timeout=5)
                       sys.exit(0 if 200 <= response.status < 300 else 1)
                   except Exception:
