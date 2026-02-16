@@ -191,3 +191,6 @@ async def test_run_document_level_extraction():
         assert len(result["entities"]) == 1
         assert len(result["relationships"]) == 1
         assert result["entities"][0]["name"] == "TestEntity"
+        assert result["relationships"][0]["source"] == "A"
+        assert result["relationships"][0]["target"] == "B"
+        assert result["relationships"][0]["type"] == "uses"

@@ -127,9 +127,11 @@ async def run_document_level_extraction(
 ) -> dict:
     """Run tier-3 LLM extraction on the full document.
 
-    Note: We only have access to the last chunk's text at this point.
-    For multi-chunk documents, this is a limitation of the current architecture.
-    Future enhancement: API could return all chunk texts in claim response.
+    IMPORTANT LIMITATION: Currently only has access to the last chunk's text.
+    For multi-chunk documents, entity extraction and summarization quality may be reduced.
+    
+    TODO: API should return all chunk texts in the claim response to enable
+    full-document analysis. This is tracked in the parent issue for complete migration.
 
     Args:
         base_id: Legacy base ID
@@ -143,9 +145,15 @@ async def run_document_level_extraction(
     """
     logger.info(f"Running document-level extraction for {base_id}")
 
+    # Warn if multi-chunk document - extraction quality will be limited
+    if total_chunks > 1:
+        logger.warning(
+            f"Document {base_id} has {total_chunks} chunks, but only last chunk text "
+            f"is available for tier-3 extraction. Entity/summary quality may be reduced."
+        )
+
     try:
         # For now, use the last chunk text for document-level extraction
-        # TODO: API should return all chunk texts in the claim response
         full_text = last_chunk_text
 
         # Type-specific metadata extraction
