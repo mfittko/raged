@@ -122,7 +122,7 @@ export function registerIndexCommand(program: Command): void {
     .description("Clone a Git repository and index its files")
     .requiredOption("--repo <url>", "Git URL to clone")
     .option("--api <url>", "RAG API URL", "http://localhost:8080")
-    .option("--collection <name>", "Qdrant collection name", "docs")
+    .option("--collection <name>", "Collection name", "docs")
     .option("--branch <name>", "Git branch to clone")
     .option("--repoId <id>", "Stable identifier for this repo")
     .option("--token <token>", "Bearer token for auth")

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import sharp from "sharp";
-import type { IngestItem, QdrantFilter } from "./types.js";
+import type { IngestItem } from "./types.js";
 
 export const LARGE_IMAGE_THRESHOLD_BYTES = 1000000; // 1MB
 export const DEFAULT_MAX_FILES = 4000;
@@ -173,17 +173,4 @@ export function matchPrefix(rel: string, prefix?: string): boolean {
   if (!prefix) return true;
   const p = prefix.replace(/\\/g, "/");
   return rel.startsWith(p);
-}
-
-export function qdrantFilter(args: {
-  repoId?: string;
-  pathPrefix?: string;
-  lang?: string;
-}): QdrantFilter | undefined {
-  const must: Array<{ key: string; match: { value?: string; text?: string } }> = [];
-  if (args.repoId) must.push({ key: "repoId", match: { value: args.repoId } });
-  if (args.pathPrefix) must.push({ key: "path", match: { text: args.pathPrefix } });
-  if (args.lang) must.push({ key: "lang", match: { value: args.lang } });
-  if (!must.length) return undefined;
-  return { must };
 }

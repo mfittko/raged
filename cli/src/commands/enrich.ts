@@ -54,7 +54,7 @@ export function registerEnrichCommand(program: Command): void {
     .command("enrich")
     .description("Trigger and monitor enrichment tasks")
     .option("--api <url>", "RAG API URL", "http://localhost:8080")
-    .option("--collection <name>", "Qdrant collection name", "docs")
+    .option("--collection <name>", "Collection name", "docs")
     .option("--token <token>", "Bearer token for auth")
     .option("--force", "Re-enqueue all items (including already-enriched)", false)
     .option("--stats-only", "Show enrichment stats without enqueueing", false)

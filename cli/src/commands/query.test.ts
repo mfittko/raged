@@ -45,9 +45,8 @@ describe("query command", () => {
     globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
       const body = JSON.parse(init?.body as string);
       expect(body.filter).toBeDefined();
-      expect(body.filter.must).toHaveLength(2);
-      expect(body.filter.must[0].key).toBe("repoId");
-      expect(body.filter.must[1].key).toBe("lang");
+      expect(body.filter.repoId).toBe("my-repo");
+      expect(body.filter.lang).toBe("ts");
       
       return new Response(JSON.stringify(mockResults), {
         status: 200,

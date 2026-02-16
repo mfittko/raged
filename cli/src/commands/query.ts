@@ -1,7 +1,6 @@
 import type { Command } from "commander";
 import { query } from "../lib/api-client.js";
 import { logger } from "../lib/logger.js";
-import { qdrantFilter } from "../lib/utils.js";
 import type { QueryResult } from "../lib/types.js";
 
 interface QueryOptions {
@@ -31,8 +30,13 @@ export async function cmdQuery(options: QueryOptions): Promise<void> {
     process.exit(2);
   }
 
-  const filter = qdrantFilter({ repoId, pathPrefix, lang });
-  const out = await query(api, collection, String(q), topK, filter, token);
+  // Build plain filter object for Postgres-backed API
+  const filter: Record<string, string> = {};
+  if (repoId) filter.repoId = repoId;
+  if (pathPrefix) filter.path = pathPrefix;
+  if (lang) filter.lang = lang;
+
+  const out = await query(api, collection, String(q), topK, Object.keys(filter).length > 0 ? filter : undefined, token);
 
   const results = (out?.results ?? []) as QueryResult[];
   if (!results.length) {
@@ -55,7 +59,7 @@ export function registerQueryCommand(program: Command): void {
     .description("Search the RAG API for relevant chunks")
     .requiredOption("--q <text>", "Search query text")
     .option("--api <url>", "RAG API URL", "http://localhost:8080")
-    .option("--collection <name>", "Qdrant collection name", "docs")
+    .option("--collection <name>", "Collection name", "docs")
     .option("--topK <n>", "Number of results to return", "8")
     .option("--repoId <id>", "Filter by repository ID")
     .option("--pathPrefix <prefix>", "Filter by file path prefix")

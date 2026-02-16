@@ -7,13 +7,6 @@ export interface IngestItem {
   docType?: string;
 }
 
-export interface QdrantFilter {
-  must?: Array<{
-    key: string;
-    match: { value?: string; text?: string };
-  }>;
-}
-
 export interface QueryResult {
   text?: string;
   score: number;

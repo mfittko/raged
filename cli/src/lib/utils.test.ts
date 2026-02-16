@@ -6,7 +6,6 @@ import {
   extToLang,
   isTextLike,
   matchPrefix,
-  qdrantFilter,
   readFileContent,
   listFiles,
   SUPPORTED_INGEST_EXTS,
@@ -275,56 +274,6 @@ describe("utils", () => {
       expect(result.length).toBe(2);
       
       await fs.rm(tmpDir, { recursive: true });
-    });
-  });
-
-  describe("qdrantFilter", () => {
-    it("should return undefined when no filters are provided", () => {
-      expect(qdrantFilter({})).toBeUndefined();
-    });
-
-    it("should create filter for repoId only", () => {
-      const filter = qdrantFilter({ repoId: "my-repo" });
-      expect(filter).toEqual({
-        must: [{ key: "repoId", match: { value: "my-repo" } }],
-      });
-    });
-
-    it("should create filter for pathPrefix only", () => {
-      const filter = qdrantFilter({ pathPrefix: "src/" });
-      expect(filter).toEqual({
-        must: [{ key: "path", match: { text: "src/" } }],
-      });
-    });
-
-    it("should create filter for lang only", () => {
-      const filter = qdrantFilter({ lang: "typescript" });
-      expect(filter).toEqual({
-        must: [{ key: "lang", match: { value: "typescript" } }],
-      });
-    });
-
-    it("should create filter with multiple conditions", () => {
-      const filter = qdrantFilter({
-        repoId: "my-repo",
-        pathPrefix: "src/",
-        lang: "typescript",
-      });
-      expect(filter).toEqual({
-        must: [
-          { key: "repoId", match: { value: "my-repo" } },
-          { key: "path", match: { text: "src/" } },
-          { key: "lang", match: { value: "typescript" } },
-        ],
-      });
-    });
-
-    it("should create filter with any combination of parameters", () => {
-      const filter1 = qdrantFilter({ repoId: "repo1", lang: "js" });
-      expect(filter1?.must).toHaveLength(2);
-
-      const filter2 = qdrantFilter({ pathPrefix: "lib/", lang: "ts" });
-      expect(filter2?.must).toHaveLength(2);
     });
   });
 });

@@ -154,7 +154,7 @@ export function registerIngestCommand(program: Command): void {
     .option("--dir <path>", "Directory to ingest")
     .option("--url <url>", "URL to fetch and ingest")
     .option("--api <url>", "RAG API URL", "http://localhost:8080")
-    .option("--collection <name>", "Qdrant collection name", "docs")
+    .option("--collection <name>", "Collection name", "docs")
     .option("--token <token>", "Bearer token for auth")
     .option("--maxFiles <number>", "Maximum files to process from directory", String(DEFAULT_MAX_FILES))
     .option("--no-enrich", "Disable enrichment")
