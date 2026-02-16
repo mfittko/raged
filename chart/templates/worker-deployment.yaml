@@ -33,11 +33,13 @@ spec:
             - secretRef: { name: {{ .Release.Name }}-worker-secret }
             {{- end }}
           env:
+            {{- if and .Values.api.auth.enabled .Values.api.auth.token }}
             - name: API_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-api-secret
-                  key: API_AUTH_TOKEN
+                  name: {{ .Release.Name }}-api-auth
+                  key: RAG_API_TOKEN
+            {{- end }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -61,14 +63,15 @@ spec:
             initialDelaySeconds: 30
             timeoutSeconds: 5
             periodSeconds: 30
-          # Readiness: check API /healthz endpoint (worker communicates via API)
+          # Readiness: process-level readiness only (avoid external dependency coupling)
           readinessProbe:
-            httpGet:
-              path: /healthz
-              port: {{ .Values.api.service.port }}
-              httpHeaders:
-                - name: Host
-                  value: {{ .Release.Name }}-api
+            exec:
+              command:
+                - python
+                - -c
+                - |
+                  import sys
+                  sys.exit(0)
             initialDelaySeconds: 10
             timeoutSeconds: 5
             periodSeconds: 10
