@@ -1,5 +1,7 @@
 import { buildApp } from "./server.js";
 import { runMigrations } from "./db.js";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 const PORT = Number(process.env.PORT || "8080");
 
@@ -53,7 +55,9 @@ async function init() {
 }
 
 // Only run when this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+const entrypointPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+
+if (entrypointPath && fileURLToPath(import.meta.url) === entrypointPath) {
   init()
     .then((app) => app.listen({ port: PORT, host: "0.0.0.0" }))
     .catch((err) => {
