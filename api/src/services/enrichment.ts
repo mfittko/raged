@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { EnrichmentTask } from "../types.js";
+import { getPool } from "../db.js";
 
 export interface EnrichmentStatusRequest {
   baseId: string;
@@ -49,51 +50,32 @@ export interface EnqueueResult {
   enqueued: number;
 }
 
-export interface EnrichmentDeps {
-  collectionName: (name?: string) => string;
-  scrollPointsPage: (
-    collection: string,
-    filter?: Record<string, unknown>,
-    limit?: number,
-    offset?: string | number | Record<string, unknown> | null,
-  ) => Promise<{
-    points: Array<{
-      id: string;
-      payload?: Record<string, unknown>;
-    }>;
-    nextOffset: string | number | Record<string, unknown> | null;
-  }>;
-  scrollPoints: (
-    collection: string,
-    filter?: Record<string, unknown>,
-    limit?: number,
-  ) => Promise<
-    Array<{
-      id: string;
-      payload?: Record<string, unknown>;
-    }>
-  >;
-  getQueueLength: (queueName: string) => Promise<number>;
-  enqueueTask: (task: EnrichmentTask) => Promise<void>;
-  getPointsByBaseId: (
-    collection: string,
-    baseId: string,
-  ) => Promise<
-    Array<{
-      id: string;
-      payload?: Record<string, unknown>;
-    }>
-  >;
-}
-
 export async function getEnrichmentStatus(
   request: EnrichmentStatusRequest,
-  deps: EnrichmentDeps,
+  collection?: string,
 ): Promise<EnrichmentStatusResult> {
-  const col = deps.collectionName(request.collection);
-  const chunks = await deps.getPointsByBaseId(col, request.baseId);
+  const col = collection || "docs";
+  const pool = getPool();
 
-  if (chunks.length === 0) {
+  const result = await pool.query<{
+    enrichment_status: string;
+    enriched_at: string | null;
+    tier2_meta: Record<string, unknown> | null;
+    tier3_meta: Record<string, unknown> | null;
+  }>(
+    `SELECT 
+      c.enrichment_status,
+      c.enriched_at,
+      c.tier2_meta,
+      c.tier3_meta
+    FROM chunks c
+    JOIN documents d ON c.document_id = d.id
+    WHERE d.base_id = $1 AND d.collection = $2
+    ORDER BY c.chunk_index`,
+    [request.baseId, col]
+  );
+
+  if (result.rows.length === 0) {
     const error = new Error(`No chunks found for baseId: ${request.baseId}`) as Error & { statusCode?: number };
     error.statusCode = 404;
     throw error;
@@ -111,36 +93,37 @@ export async function getEnrichmentStatus(
   let tier2Meta: Record<string, unknown> | undefined;
   let tier3Meta: Record<string, unknown> | undefined;
 
-  for (const chunk of chunks) {
-    const status = (chunk.payload?.enrichmentStatus as string) || "none";
+  for (const chunk of result.rows) {
+    const status = chunk.enrichment_status || "none";
     if (status in statusCounts) {
       statusCounts[status as keyof typeof statusCounts]++;
     }
 
-    if (status === "enriched" && chunk.payload) {
-      const extractedAt = chunk.payload.enrichedAt as string | undefined;
+    if (status === "enriched") {
+      const extractedAt = chunk.enriched_at;
       if (extractedAt && (!latestExtractedAt || extractedAt > latestExtractedAt)) {
         latestExtractedAt = extractedAt;
       }
 
-      if (chunk.payload.tier2) {
-        tier2Meta = chunk.payload.tier2 as Record<string, unknown>;
+      if (chunk.tier2_meta) {
+        tier2Meta = chunk.tier2_meta;
       }
-      if (chunk.payload.tier3) {
-        tier3Meta = chunk.payload.tier3 as Record<string, unknown>;
+      if (chunk.tier3_meta) {
+        tier3Meta = chunk.tier3_meta;
       }
     }
   }
 
   // Determine overall status
   let status: "enriched" | "processing" | "pending" | "failed" | "none" | "mixed";
-  if (statusCounts.enriched === chunks.length) {
+  const total = result.rows.length;
+  if (statusCounts.enriched === total) {
     status = "enriched";
-  } else if (statusCounts.pending === chunks.length) {
+  } else if (statusCounts.pending === total) {
     status = "pending";
-  } else if (statusCounts.processing === chunks.length) {
+  } else if (statusCounts.processing === total) {
     status = "processing";
-  } else if (statusCounts.none === chunks.length) {
+  } else if (statusCounts.none === total) {
     status = "none";
   } else if (statusCounts.failed > 0) {
     status = "failed";
@@ -148,41 +131,62 @@ export async function getEnrichmentStatus(
     status = "mixed";
   }
 
-  const result: EnrichmentStatusResult = {
+  const statusResult: EnrichmentStatusResult = {
     baseId: request.baseId,
     status,
     chunks: {
-      total: chunks.length,
+      total,
       ...statusCounts,
     },
   };
 
   if (latestExtractedAt) {
-    result.extractedAt = latestExtractedAt;
+    statusResult.extractedAt = latestExtractedAt;
   }
 
   if (tier2Meta || tier3Meta) {
-    result.metadata = {};
-    if (tier2Meta) result.metadata.tier2 = tier2Meta;
-    if (tier3Meta) result.metadata.tier3 = tier3Meta;
+    statusResult.metadata = {};
+    if (tier2Meta) statusResult.metadata.tier2 = tier2Meta;
+    if (tier3Meta) statusResult.metadata.tier3 = tier3Meta;
   }
 
-  return result;
+  return statusResult;
 }
 
-export async function getEnrichmentStats(
-  deps: Pick<EnrichmentDeps, "getQueueLength" | "scrollPointsPage" | "collectionName">,
-): Promise<EnrichmentStatsResult> {
-  // Get queue lengths from Redis
-  const [pending, deadLetter] = await Promise.all([
-    deps.getQueueLength("enrichment:pending"),
-    deps.getQueueLength("enrichment:dead-letter"),
-  ]);
+export async function getEnrichmentStats(): Promise<EnrichmentStatsResult> {
+  const pool = getPool();
 
-  // Stream through collection in pages to avoid loading all points into memory
-  const col = deps.collectionName();
-  const PAGE_SIZE = 500;
-  
+  // Get queue stats from task_queue
+  const queueResult = await pool.query<{ status: string; count: number }>(
+    `SELECT status, COUNT(*)::int AS count
+    FROM task_queue
+    WHERE queue = 'enrichment'
+    GROUP BY status`
+  );
+
+  const queueCounts = {
+    pending: 0,
+    processing: 0,
+    deadLetter: 0,
+  };
+
+  for (const row of queueResult.rows) {
+    if (row.status === "pending") {
+      queueCounts.pending = row.count;
+    } else if (row.status === "processing") {
+      queueCounts.processing = row.count;
+    } else if (row.status === "dead") {
+      queueCounts.deadLetter = row.count;
+    }
+  }
+
+  // Get totals from chunks table
+  const chunksResult = await pool.query<{ enrichment_status: string; count: number }>(
+    `SELECT enrichment_status, COUNT(*)::int AS count
+    FROM chunks
+    GROUP BY enrichment_status`
+  );
+
   const totals = {
     enriched: 0,
     failed: 0,
@@ -191,133 +195,113 @@ export async function getEnrichmentStats(
     none: 0,
   };
 
-  let offset: string | number | Record<string, unknown> | null = null;
-
-  while (true) {
-    const page = await deps.scrollPointsPage(col, undefined, PAGE_SIZE, offset);
-    
-    for (const point of page.points) {
-      const status = (point.payload?.enrichmentStatus as string) || "none";
-      if (status in totals) {
-        totals[status as keyof typeof totals]++;
-      }
+  for (const row of chunksResult.rows) {
+    const status = row.enrichment_status;
+    if (status in totals) {
+      totals[status as keyof typeof totals] = row.count;
     }
-
-    if (page.nextOffset === null) {
-      break;
-    }
-    offset = page.nextOffset;
   }
 
   return {
-    queue: {
-      pending,
-      processing: totals.processing,
-      deadLetter,
-    },
+    queue: queueCounts,
     totals,
   };
 }
 
 export async function enqueueEnrichment(
   request: EnqueueRequest,
-  deps: EnrichmentDeps,
+  collection?: string,
 ): Promise<EnqueueResult> {
-  const col = deps.collectionName(request.collection);
+  const col = collection || "docs";
+  const pool = getPool();
 
-  // Build filter for items that need enrichment
-  const filter = request.force
-    ? undefined
-    : {
-        must_not: [
-          {
-            key: "enrichmentStatus",
-            match: { value: "enriched" },
-          },
-        ],
-      };
+  // Build filter for chunks that need enrichment
+  let filterSql = "";
+  if (!request.force) {
+    filterSql = " AND c.enrichment_status != 'enriched'";
+  }
 
-  // Stream through collection in pages to avoid loading all points into memory
-  const PAGE_SIZE = 500;
-  const BATCH_SIZE = 100;
-  
-  let enqueued = 0;
+  // Fetch chunks that need enrichment
+  const chunksResult = await pool.query<{
+    chunk_id: string;
+    base_id: string;
+    chunk_index: number;
+    text: string;
+    source: string;
+    doc_type: string;
+    tier1_meta: Record<string, unknown> | null;
+  }>(
+    `SELECT 
+      c.id::text || ':' || c.chunk_index AS chunk_id,
+      d.base_id,
+      c.chunk_index,
+      c.text,
+      d.source,
+      c.doc_type,
+      c.tier1_meta
+    FROM chunks c
+    JOIN documents d ON c.document_id = d.id
+    WHERE d.collection = $1${filterSql}
+    ORDER BY d.id, c.chunk_index`,
+    [col]
+  );
+
+  // Count chunks per baseId
   const baseIdToTotalChunks = new Map<string, number>();
-  const pendingTasks: EnrichmentTask[] = [];
-
-  let offset: string | number | Record<string, unknown> | null = null;
-
-  // First pass: count chunks per baseId across the entire filtered dataset
-  while (true) {
-    const page = await deps.scrollPointsPage(col, filter, PAGE_SIZE, offset);
-
-    for (const point of page.points) {
-      const baseId = extractBaseId(point.id);
-      const current = baseIdToTotalChunks.get(baseId) ?? 0;
-      baseIdToTotalChunks.set(baseId, current + 1);
-    }
-
-    if (page.nextOffset === null) {
-      break;
-    }
-    offset = page.nextOffset;
+  for (const chunk of chunksResult.rows) {
+    const current = baseIdToTotalChunks.get(chunk.base_id) ?? 0;
+    baseIdToTotalChunks.set(chunk.base_id, current + 1);
   }
 
-  // Second pass: build and enqueue tasks with correct totalChunks values
-  offset = null;
-  while (true) {
-    const page = await deps.scrollPointsPage(col, filter, PAGE_SIZE, offset);
+  // Build enrichment tasks
+  const tasks: EnrichmentTask[] = [];
+  const now = new Date().toISOString();
 
-    for (const point of page.points) {
-      const payload = point.payload;
-      if (!payload) continue;
+  for (const chunk of chunksResult.rows) {
+    const totalChunks = baseIdToTotalChunks.get(chunk.base_id) ?? 1;
+    
+    tasks.push({
+      taskId: randomUUID(),
+      chunkId: chunk.chunk_id,
+      collection: col,
+      docType: chunk.doc_type || "text",
+      baseId: chunk.base_id,
+      chunkIndex: chunk.chunk_index,
+      totalChunks,
+      text: chunk.text,
+      source: chunk.source,
+      tier1Meta: chunk.tier1_meta || {},
+      attempt: 1,
+      enqueuedAt: now,
+    });
+  }
 
-      const baseId = extractBaseId(point.id);
-      const totalChunks = baseIdToTotalChunks.get(baseId) ?? 1;
-
-      const task: EnrichmentTask = {
-        taskId: randomUUID(),
-        chunkId: point.id,
-        collection: col,
-        docType: (payload.docType as string) || "text",
-        baseId,
-        chunkIndex: (payload.chunkIndex as number) || 0,
-        totalChunks,
-        text: (payload.text as string) || "",
-        source: (payload.source as string) || "",
-        tier1Meta: (payload.tier1Meta as Record<string, unknown>) || {},
-        attempt: 1,
-        enqueuedAt: new Date().toISOString(),
-      };
-
-      pendingTasks.push(task);
+  // Enqueue tasks in batches
+  const BATCH_SIZE = 100;
+  const client = await pool.connect();
+  try {
+    for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+      const batch = tasks.slice(i, i + BATCH_SIZE);
       
-      // Batch enqueue when we have enough tasks
-      if (pendingTasks.length >= BATCH_SIZE) {
-        await Promise.all(pendingTasks.map((t) => deps.enqueueTask(t)));
-        enqueued += pendingTasks.length;
-        pendingTasks.length = 0;
+      const values: unknown[] = [];
+      const rowsSql: string[] = [];
+
+      for (let j = 0; j < batch.length; j++) {
+        const task = batch[j];
+        const base = j * 4;
+        rowsSql.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`);
+        values.push("enrichment", "pending", JSON.stringify(task), now);
       }
-    }
 
-    if (page.nextOffset === null) {
-      break;
+      await client.query(
+        `INSERT INTO task_queue (queue, status, payload, run_after)
+         VALUES ${rowsSql.join(", ")}`,
+        values
+      );
     }
-    offset = page.nextOffset;
+  } finally {
+    client.release();
   }
 
-  // Enqueue any remaining tasks
-  if (pendingTasks.length > 0) {
-    await Promise.all(pendingTasks.map((t) => deps.enqueueTask(t)));
-    enqueued += pendingTasks.length;
-  }
-
-  return { ok: true, enqueued };
-}
-
-function extractBaseId(chunkId: string): string {
-  // Format is typically "baseId:chunkIndex"
-  const lastColon = chunkId.lastIndexOf(":");
-  if (lastColon === -1) return chunkId;
-  return chunkId.substring(0, lastColon);
+  return { ok: true, enqueued: tasks.length };
 }
