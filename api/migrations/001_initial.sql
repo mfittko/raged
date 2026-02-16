@@ -9,8 +9,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE documents (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     -- Legacy identifier kept for compatibility with /enrichment/:baseId lookups.
-    -- Nullable: new documents created after the migration do not need a base_id.
-    base_id       TEXT UNIQUE,
+    -- Nullable: this column is optional (explicit NULL), so new documents do not need a base_id.
+    base_id       TEXT UNIQUE NULL,
     -- Natural identity key for idempotent re-ingest (derived from canonical source path/URL)
     identity_key  TEXT NOT NULL,
     source        TEXT NOT NULL,
@@ -48,6 +48,7 @@ CREATE INDEX idx_documents_lang ON documents (lang);
 CREATE FUNCTION touch_documents_timestamps()
 RETURNS trigger AS $$
 BEGIN
+    NEW.ingested_at := OLD.ingested_at;
     NEW.updated_at := now();
     NEW.last_seen := now();
     RETURN NEW;

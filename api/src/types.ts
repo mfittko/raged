@@ -2,7 +2,7 @@
 
 export interface EnrichmentTask {
   taskId: string;
-  qdrantId: string;
+  chunkId: string;
   collection: string;
   docType: string;
   baseId: string;

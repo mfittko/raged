@@ -286,7 +286,7 @@ export async function ingest(
       for (let chunkIndex = 0; chunkIndex < procItem.chunks.length; chunkIndex++) {
         tasks.push({
           taskId: randomUUID(),
-          qdrantId: `${procItem.baseId}:${chunkIndex}`,
+          chunkId: `${procItem.baseId}:${chunkIndex}`,
           collection: col,
           docType: procItem.docType,
           baseId: procItem.baseId,
