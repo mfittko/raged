@@ -24,7 +24,9 @@ import { getPool } from "./db.js";
 export function buildApp() {
   // Trust proxy only when explicitly enabled via env var for security
   const trustProxy = process.env.TRUST_PROXY === "true";
-  const app = Fastify({ logger: true, trustProxy });
+  const parsedBodyLimit = Number.parseInt(process.env.BODY_LIMIT_BYTES || "10485760", 10);
+  const bodyLimit = Number.isFinite(parsedBodyLimit) && parsedBodyLimit > 0 ? parsedBodyLimit : 10485760;
+  const app = Fastify({ logger: true, trustProxy, bodyLimit });
   registerErrorHandler(app);
   
   // Register CORS with env-configurable origin(s)

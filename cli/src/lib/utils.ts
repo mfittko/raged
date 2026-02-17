@@ -40,35 +40,65 @@ export function detectDocType(filePath: string): string {
 export async function readFileContent(
   filePath: string,
   docType: string
-): Promise<{ text: string; metadata?: Record<string, unknown> }> {
+): Promise<{ text: string; metadata?: Record<string, unknown>; rawData?: string; rawMimeType?: string }> {
   if (docType === "pdf") {
     const buffer = await fs.readFile(filePath);
     try {
-      // Dynamic import to handle module resolution
       const pdfModule = await import("pdf-parse") as unknown as {
+        PDFParse?: new (opts: { data: Buffer }) => {
+          getText: () => Promise<{ text: string; total?: number }>;
+          getInfo: () => Promise<{ total?: number; info?: { Title?: string; Author?: string } }>;
+          destroy: () => Promise<void>;
+        };
         default?: (buffer: Buffer) => Promise<{
           text: string;
-          numpages: number;
+          numpages?: number;
           info?: {
             Title?: string;
             Author?: string;
           };
         }>;
       };
-      const parsePdf = pdfModule.default || (pdfModule as unknown as (buffer: Buffer) => Promise<{
-        text: string;
-        numpages: number;
-        info?: { Title?: string; Author?: string };
-      }>);
-      const data = await parsePdf(buffer);
-      return {
-        text: data.text,
-        metadata: {
-          title: data.info?.Title,
-          author: data.info?.Author,
-          pageCount: data.numpages,
-        },
-      };
+
+      if (typeof pdfModule.PDFParse === "function") {
+        const parser = new pdfModule.PDFParse({ data: buffer });
+        try {
+          const textResult = await parser.getText();
+          const infoResult = await parser.getInfo();
+          return {
+            text: textResult.text,
+            metadata: {
+              title: infoResult.info?.Title,
+              author: infoResult.info?.Author,
+              pageCount: infoResult.total ?? textResult.total,
+              sizeBytes: buffer.length,
+              contentType: "application/pdf",
+            },
+            rawData: buffer.toString("base64"),
+            rawMimeType: "application/pdf",
+          };
+        } finally {
+          await parser.destroy();
+        }
+      }
+
+      if (typeof pdfModule.default === "function") {
+        const data = await pdfModule.default(buffer);
+        return {
+          text: data.text,
+          metadata: {
+            title: data.info?.Title,
+            author: data.info?.Author,
+            pageCount: data.numpages,
+            sizeBytes: buffer.length,
+            contentType: "application/pdf",
+          },
+          rawData: buffer.toString("base64"),
+          rawMimeType: "application/pdf",
+        };
+      }
+
+      throw new Error("Unsupported pdf-parse module shape");
     } catch (error: unknown) {
       if (error && typeof error === "object" && "code" in error) {
         const code = (error as { code: string }).code;
@@ -87,9 +117,19 @@ export async function readFileContent(
     const buffer = await fs.readFile(filePath);
     const fileSizeBytes = buffer.length;
     const base64 = buffer.toString("base64");
+    const extension = path.extname(filePath).slice(1).toLowerCase();
+    const mimeByExt: Record<string, string> = {
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+    };
+    const contentType = mimeByExt[extension] || "application/octet-stream";
     const metadata: Record<string, unknown> = { 
-      format: path.extname(filePath).slice(1),
-      sizeBytes: fileSizeBytes 
+      format: extension,
+      sizeBytes: fileSizeBytes,
+      contentType,
     };
     
     try {
@@ -108,7 +148,7 @@ export async function readFileContent(
       }
     }
     
-    return { text: base64, metadata };
+    return { text: base64, metadata, rawData: base64, rawMimeType: contentType };
   }
   
   // For text and code files

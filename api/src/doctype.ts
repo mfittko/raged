@@ -13,6 +13,8 @@ export interface IngestItem {
   text?: string;       // optional when url is provided
   url?: string;        // new: URL to fetch and extract
   source?: string;     // optional (auto-set from url if not provided)
+  rawData?: string;    // optional base64-encoded original payload bytes
+  rawMimeType?: string;
   docType?: DocType;
   metadata?: Record<string, unknown>;
 }

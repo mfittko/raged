@@ -225,4 +225,28 @@ describe("ingest command", () => {
 
     globalThis.fetch = fetchMock;
   });
+
+  it("should include overwrite in payload when enabled", async () => {
+    const mockResponse = {
+      upserted: 1,
+      errors: [],
+    };
+
+    globalThis.fetch = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string);
+      expect(body.overwrite).toBe(true);
+
+      return new Response(JSON.stringify(mockResponse), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    await cmdIngest({
+      url: "https://example.com",
+      overwrite: true,
+    });
+
+    globalThis.fetch = fetchMock;
+  });
 });

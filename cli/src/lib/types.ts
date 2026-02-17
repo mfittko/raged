@@ -3,6 +3,8 @@ export interface IngestItem {
   text?: string;
   url?: string;
   source?: string;
+  rawData?: string;
+  rawMimeType?: string;
   metadata?: Record<string, unknown>;
   docType?: string;
 }
@@ -15,6 +17,7 @@ export interface QueryResult {
 
 export interface IngestResponse {
   upserted: number;
+  skipped?: number;
   errors?: Array<{
     url: string;
     reason: string;

@@ -24,6 +24,7 @@ interface IndexOptions {
   keep?: boolean;
   repoId?: string;
   enrich?: boolean;
+  overwrite?: boolean;
   docType?: string;
   include?: string;
   exclude?: string;
@@ -40,6 +41,7 @@ export async function cmdIndex(options: IndexOptions): Promise<void> {
   const keep = Boolean(options.keep);
   const repoId = String(options.repoId || repoUrl);
   const enrich = options.enrich !== false; // default true
+  const overwrite = options.overwrite === true;
   const docType = options.docType;
 
   const includePrefix = options.include;
@@ -101,13 +103,13 @@ export async function cmdIndex(options: IndexOptions): Promise<void> {
 
       if (items.length >= 50) {
         logger.info(`[rag-index] Ingesting batch (${items.length})...`);
-        await ingest(api, collection, items.splice(0, items.length), token, enrich);
+        await ingest(api, collection, items.splice(0, items.length), token, enrich, overwrite);
       }
     }
 
     if (items.length) {
       logger.info(`[rag-index] Ingesting final batch (${items.length})...`);
-      await ingest(api, collection, items, token, enrich);
+      await ingest(api, collection, items, token, enrich, overwrite);
     }
     logger.info(`[rag-index] Done. repoId=${repoId}`);
   } finally {
@@ -132,6 +134,7 @@ export function registerIndexCommand(program: Command): void {
     .option("--maxBytes <n>", "Maximum file size in bytes", "500000")
     .option("--keep", "Keep the cloned temp directory", false)
     .option("--no-enrich", "Disable enrichment")
+    .option("--overwrite", "Overwrite existing documents for matching source/identity")
     .option("--doc-type <type>", "Override document type detection")
     .action(cmdIndex);
 }

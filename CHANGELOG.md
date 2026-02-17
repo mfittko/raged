@@ -6,6 +6,18 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 
 ---
 
+## February 17, 2026
+
+### Added
+
+- **Payload Checksum Migrations** ([#81](https://github.com/mfittko/RAGed/pull/81)): Introduced new SQL migrations to store payload checksums and optional raw bytes so ingest metadata persists the original source content required for idempotency and raw-data verification.
+
+### Changed
+
+- **Exact Raw Ingest Handling** ([#81](https://github.com/mfittko/RAGed/pull/81)): Updated ingest contracts, pipeline, and blob-store integration to persist raw payload bytes or offload large payloads while computing checksums, reusing S3 clients, and ensuring idempotent skips only occur when content is unchanged.
+- **10MB Body Limit** ([#81](https://github.com/mfittko/RAGed/pull/81)): Added and documented the 10MB ingest body limit across env configs, docs, and server settings so oversized requests fail fast while chunked uploads are still pending.
+
+
 
 
 

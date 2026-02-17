@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ingest } from "./ingest.js";
 import type { IngestRequest } from "./ingest.js";
 import type { PoolClient } from "pg";
+import { createHash } from "node:crypto";
 
 const mockClient = {
   query: vi.fn(),
@@ -26,11 +27,19 @@ vi.mock("./url-extract.js", () => ({
   extractContentAsync: vi.fn(),
 }));
 
+vi.mock("../blob-store.js", () => ({
+  shouldStoreRawBlob: vi.fn(() => false),
+  uploadRawBlob: vi.fn(),
+}));
+
 import { fetchUrls } from "./url-fetch.js";
 import { extractContentAsync } from "./url-extract.js";
+import { shouldStoreRawBlob, uploadRawBlob } from "../blob-store.js";
 
 const mockedFetchUrls = vi.mocked(fetchUrls);
 const mockedExtractContentAsync = vi.mocked(extractContentAsync);
+const mockedShouldStoreRawBlob = vi.mocked(shouldStoreRawBlob);
+const mockedUploadRawBlob = vi.mocked(uploadRawBlob);
 
 function setupClientForSingleDocument(baseId: string): void {
   mockClient.query = vi.fn(async (sql: string) => {
@@ -53,6 +62,7 @@ describe("ingest integration (Postgres)", () => {
     vi.clearAllMocks();
     process.env.ENRICHMENT_ENABLED = "false";
     mockClient.release = vi.fn();
+    mockedShouldStoreRawBlob.mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -170,5 +180,194 @@ describe("ingest integration (Postgres)", () => {
     const payload = JSON.parse(String(params[2])) as { baseId: string; chunkId: string };
     expect(payload.baseId).toBe("existing-base-id");
     expect(payload.chunkId.startsWith("existing-base-id:")).toBe(true);
+  });
+
+  it("writes filterable metadata fields to documents and chunks", async () => {
+    setupClientForSingleDocument("base-filter-doc");
+
+    const result = await ingest(
+      {
+        items: [
+          {
+            source: "repo/src/auth.ts",
+            text: "export const hello = true;",
+            docType: "code",
+            metadata: {
+              repoId: "raged",
+              repoUrl: "https://github.com/mfittko/RAGed",
+              path: "src/auth.ts",
+              lang: "ts",
+            },
+          },
+        ],
+      },
+      "docs",
+    );
+
+    expect(result.ok).toBe(true);
+
+    const docInsertCall = vi
+      .mocked(mockClient.query)
+      .mock.calls.find(([sql]) => typeof sql === "string" && sql.includes("INSERT INTO documents"));
+    expect(docInsertCall).toBeDefined();
+    const docParams = docInsertCall![1] as unknown[];
+    expect(docParams).toContain("raged");
+    expect(docParams).toContain("https://github.com/mfittko/RAGed");
+    expect(docParams).toContain("src/auth.ts");
+    expect(docParams).toContain("ts");
+
+    const chunkInsertCall = vi
+      .mocked(mockClient.query)
+      .mock.calls.find(([sql]) => typeof sql === "string" && sql.includes("INSERT INTO chunks"));
+    expect(chunkInsertCall).toBeDefined();
+    const chunkParams = chunkInsertCall![1] as unknown[];
+    expect(chunkParams).toContain("raged");
+    expect(chunkParams).toContain("src/auth.ts");
+    expect(chunkParams).toContain("ts");
+    expect(chunkParams).toContain("code");
+  });
+
+  it("stores oversized raw content in blob storage and persists raw references", async () => {
+    setupClientForSingleDocument("base-blob-doc");
+
+    mockedShouldStoreRawBlob.mockReturnValue(true);
+    mockedUploadRawBlob.mockResolvedValue({
+      key: "documents/doc-1/raw-abcd1234.txt",
+      bytes: 1_424_243,
+      mimeType: "application/pdf",
+    });
+
+    const rawBytes = Buffer.from("%PDF-1.7\nvery-large-binary-placeholder\n", "utf8");
+
+    const result = await ingest(
+      {
+        items: [
+          {
+            source: "tmp/sample.pdf",
+            text: "extracted pdf text",
+            docType: "pdf",
+            rawData: rawBytes.toString("base64"),
+            rawMimeType: "application/pdf",
+            metadata: { sizeBytes: 1_424_243, contentType: "application/pdf" },
+          },
+        ],
+      },
+      "docs",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mockedUploadRawBlob).toHaveBeenCalledOnce();
+    expect(mockedUploadRawBlob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "tmp/sample.pdf",
+        mimeType: "application/pdf",
+        body: expect.any(Buffer),
+      }),
+    );
+    const uploadArg = mockedUploadRawBlob.mock.calls[0]?.[0] as { body: Buffer };
+    expect(uploadArg.body.equals(rawBytes)).toBe(true);
+
+    const updateCall = vi
+      .mocked(mockClient.query)
+      .mock.calls.find(([sql]) =>
+        typeof sql === "string" &&
+        sql.includes("UPDATE documents") &&
+        sql.includes("raw_key"),
+      );
+
+    expect(updateCall).toBeDefined();
+    expect(updateCall?.[1]).toEqual([
+      "doc-1",
+      "documents/doc-1/raw-abcd1234.txt",
+      1_424_243,
+      "application/pdf",
+      expect.any(String),
+    ]);
+  });
+
+  it("stores exact raw payload in raw_data when below blob threshold", async () => {
+    setupClientForSingleDocument("base-raw-doc");
+
+    mockedShouldStoreRawBlob.mockReturnValue(false);
+
+    const rawBytes = Buffer.from("%PDF-1.7\nraw-binary-payload\n", "utf8");
+    const expectedChecksum = createHash("sha256").update(rawBytes).digest("hex");
+
+    const result = await ingest(
+      {
+        items: [
+          {
+            source: "tmp/small.pdf",
+            text: "derived extracted text",
+            docType: "pdf",
+            rawData: rawBytes.toString("base64"),
+            rawMimeType: "application/pdf",
+            metadata: { sizeBytes: rawBytes.length, contentType: "application/pdf" },
+          },
+        ],
+      },
+      "docs",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mockedUploadRawBlob).not.toHaveBeenCalled();
+
+    const docInsertCall = vi
+      .mocked(mockClient.query)
+      .mock.calls.find(([sql]) => typeof sql === "string" && sql.includes("INSERT INTO documents"));
+
+    expect(docInsertCall).toBeDefined();
+    const docParams = docInsertCall![1] as unknown[];
+    expect(docParams[11]).toBe(expectedChecksum);
+    expect(docParams[13]).toBe(rawBytes.length);
+    expect(docParams[14]).toBe("application/pdf");
+    expect(Buffer.isBuffer(docParams[16])).toBe(true);
+    expect((docParams[16] as Buffer).equals(rawBytes)).toBe(true);
+  });
+
+  it("skips existing identity when overwrite is not enabled", async () => {
+    const testText = "export const hello = true;";
+    const testChecksum = createHash("sha256").update(Buffer.from(testText, "utf8")).digest("hex");
+    
+    mockClient.query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT identity_key, payload_checksum")) {
+        return {
+          rows: [{ identity_key: "repo/src/auth.ts", payload_checksum: testChecksum }],
+        };
+      }
+
+      if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
+        return { rows: [] };
+      }
+
+      if (sql.includes("INSERT INTO documents")) {
+        return { rows: [{ id: "doc-1", base_id: "base-skip-doc" }] };
+      }
+
+      return { rows: [] };
+    }) as unknown as PoolClient["query"];
+
+    const result = await ingest(
+      {
+        items: [
+          {
+            source: "repo/src/auth.ts",
+            text: testText,
+            docType: "code",
+          },
+        ],
+      },
+      "docs",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.upserted).toBe(0);
+    expect(result.skipped).toBe(1);
+
+    const docInsertCall = vi
+      .mocked(mockClient.query)
+      .mock.calls.find(([sql]) => typeof sql === "string" && sql.includes("INSERT INTO documents"));
+
+    expect(docInsertCall).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@ export const ingestSchema = {
     properties: {
       collection: { type: "string" as const },
       enrich: { type: "boolean" as const },
+      overwrite: { type: "boolean" as const },
       items: {
         type: "array" as const,
         minItems: 1,
@@ -18,6 +19,8 @@ export const ingestSchema = {
             text: { type: "string" as const, minLength: 1, pattern: "\\S" },
             url: { type: "string" as const, format: "uri", pattern: "^https?://" },
             source: { type: "string" as const, minLength: 1, pattern: "\\S" },
+            rawData: { type: "string" as const, minLength: 1 },
+            rawMimeType: { type: "string" as const, minLength: 1 },
             docType: {
               type: "string" as const,
               enum: ["code", "slack", "email", "meeting", "pdf", "image", "article", "text"],

@@ -11,10 +11,12 @@ export async function ingest(
   collection: string,
   items: IngestItem[],
   token?: string,
-  enrich?: boolean
+  enrich?: boolean,
+  overwrite?: boolean,
 ): Promise<IngestResponse> {
-  const body: { collection: string; items: IngestItem[]; enrich?: boolean } = { collection, items };
+  const body: { collection: string; items: IngestItem[]; enrich?: boolean; overwrite?: boolean } = { collection, items };
   if (enrich !== undefined) body.enrich = enrich;
+  if (overwrite === true) body.overwrite = true;
 
   const res = await fetch(`${api.replace(/\/$/, "")}/ingest`, {
     method: "POST",

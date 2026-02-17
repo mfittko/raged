@@ -54,5 +54,12 @@ All configuration is via environment variables. Document every env var in this f
 | `OLLAMA_URL` | `http://ollama:11434` | Ollama server URL |
 | `EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
 | `PORT` | `8080` | API listen port |
+| `BODY_LIMIT_BYTES` | `10485760` | Maximum request body size in bytes (default 10MB) |
 | `RAGED_API_TOKEN` | _(empty)_ | Bearer token for auth (empty = auth disabled) |
 | `ENRICHMENT_ENABLED` | `false` | Enable enrichment queue processing |
+| `BLOB_STORE_URL` | _(empty)_ | Optional S3 endpoint for raw blob offload |
+| `BLOB_STORE_ACCESS_KEY` | _(empty)_ | S3 access key for blob store |
+| `BLOB_STORE_SECRET_KEY` | _(empty)_ | S3 secret key for blob store |
+| `BLOB_STORE_BUCKET` | _(empty)_ | Target S3 bucket for raw blobs |
+| `BLOB_STORE_REGION` | `us-east-1` | S3 region for blob store client |
+| `BLOB_STORE_THRESHOLD_BYTES` | _(disabled)_ | Offload threshold (store raw blobs only when item size exceeds this) |

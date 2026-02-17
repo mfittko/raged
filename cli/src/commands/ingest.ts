@@ -22,6 +22,7 @@ interface IngestOptions {
   collection?: string;
   maxFiles?: string;
   enrich?: boolean;
+  overwrite?: boolean;
   docType?: string;
 }
 
@@ -33,6 +34,7 @@ export async function cmdIngest(options: IngestOptions): Promise<void> {
   const dir = options.dir;
   const url = options.url;
   const enrich = options.enrich !== false;
+  const overwrite = options.overwrite === true;
   const docTypeOverride = options.docType;
   const maxFiles = Number(options.maxFiles || DEFAULT_MAX_FILES);
 
@@ -54,7 +56,7 @@ export async function cmdIngest(options: IngestOptions): Promise<void> {
     if (docTypeOverride) item.docType = docTypeOverride;
 
     try {
-      const result = await ingest(api, collection, [item], token, enrich);
+      const result = await ingest(api, collection, [item], token, enrich, overwrite);
       
       if (result.errors && result.errors.length > 0) {
         for (const err of result.errors) {
@@ -111,7 +113,7 @@ export async function cmdIngest(options: IngestOptions): Promise<void> {
         }
       }
       
-      const { text, metadata = {} } = await readFileContent(filePath, docType);
+      const { text, metadata = {}, rawData, rawMimeType } = await readFileContent(filePath, docType);
       
       // Warn about large images (check original file size from metadata)
       if (docType === "image" && typeof metadata.sizeBytes === "number" && metadata.sizeBytes > LARGE_IMAGE_THRESHOLD_BYTES) {
@@ -126,12 +128,20 @@ export async function cmdIngest(options: IngestOptions): Promise<void> {
         metadata: { ...metadata, fileName, filePath },
         docType,
       };
+
+      if (rawData) {
+        item.rawData = rawData;
+      }
+
+      if (rawMimeType) {
+        item.rawMimeType = rawMimeType;
+      }
       
       items.push(item);
       
       if (items.length >= 10) {
         logger.info(`[rag-index] Ingesting batch (${items.length})...`);
-        await ingest(api, collection, items.splice(0, items.length), token, enrich);
+        await ingest(api, collection, items.splice(0, items.length), token, enrich, overwrite);
       }
     } catch (err) {
       logger.error(`[rag-index] Error processing ${filePath}:`, err);
@@ -140,7 +150,7 @@ export async function cmdIngest(options: IngestOptions): Promise<void> {
 
   if (items.length) {
     logger.info(`[rag-index] Ingesting final batch (${items.length})...`);
-    await ingest(api, collection, items, token, enrich);
+    await ingest(api, collection, items, token, enrich, overwrite);
   }
   
   logger.info(`[rag-index] Done. Processed ${filesToProcess.length} files.`);
@@ -158,6 +168,7 @@ export function registerIngestCommand(program: Command): void {
     .option("--token <token>", "Bearer token for auth")
     .option("--maxFiles <number>", "Maximum files to process from directory", String(DEFAULT_MAX_FILES))
     .option("--no-enrich", "Disable enrichment")
+    .option("--overwrite", "Overwrite existing documents for matching source/identity")
     .option("--doc-type <type>", "Override document type detection")
     .action(cmdIngest);
 }

@@ -117,6 +117,34 @@ describe("ingest schema validation", () => {
     await app.close();
   });
 
+  it("accepts overwrite flag for ingest", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: {
+        overwrite: true,
+        items: [{ text: "hello world", source: "test.txt" }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("rejects non-boolean overwrite flag", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/ingest",
+      payload: {
+        overwrite: "yes",
+        items: [{ text: "hello world", source: "test.txt" }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
   it("accepts URL item without text", async () => {
     const app = buildApp();
     const res = await app.inject({
