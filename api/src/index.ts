@@ -4,6 +4,28 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const PORT = Number(process.env.PORT || "8080");
+const CHUNKS_VECTOR_DIMENSION = 1536;
+
+function validateEmbeddingDimensionCompatibility(embedProvider: "ollama" | "openai"): string[] {
+  if (embedProvider === "ollama") {
+    const embedModel = (process.env.EMBED_MODEL || "nomic-embed-text").trim().toLowerCase();
+    if (embedModel === "nomic-embed-text") {
+      return [
+        `EMBED_MODEL=nomic-embed-text produces 768-dim vectors and is incompatible with chunks.embedding vector(${CHUNKS_VECTOR_DIMENSION}). Use EMBED_PROVIDER=openai with OPENAI_EMBEDDING_MODEL=text-embedding-3-small, or configure a 1536-dim Ollama embedding model before ingest.`,
+      ];
+    }
+    return [];
+  }
+
+  const openAiModel = (process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small").trim().toLowerCase();
+  if (openAiModel === "text-embedding-3-large") {
+    return [
+      `OPENAI_EMBEDDING_MODEL=text-embedding-3-large produces 3072-dim vectors and is incompatible with chunks.embedding vector(${CHUNKS_VECTOR_DIMENSION}). Use OPENAI_EMBEDDING_MODEL=text-embedding-3-small or update schema accordingly.`,
+    ];
+  }
+
+  return [];
+}
 
 /**
  * Validate required configuration.
@@ -34,6 +56,19 @@ export function validateConfig(): string[] {
       errors.push("OLLAMA_URL is required for embedding generation (e.g., http://localhost:11434)");
     }
   }
+
+  if (embedProvider === "openai") {
+    if (!process.env.OPENAI_API_KEY) {
+      errors.push("OPENAI_API_KEY is required when EMBED_PROVIDER=openai");
+    }
+  } else {
+    // OLLAMA_URL is required for ollama embedding generation
+    if (!process.env.OLLAMA_URL) {
+      errors.push("OLLAMA_URL is required for embedding generation (e.g., http://localhost:11434)");
+    }
+  }
+
+  errors.push(...validateEmbeddingDimensionCompatibility(embedProvider));
 
   return errors;
 }
