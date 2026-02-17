@@ -127,19 +127,68 @@ describe("internal service", () => {
         })
       ).resolves.not.toThrow();
     });
+
+    it("stores summary on document and omits summary from chunk tier3 metadata", async () => {
+      const { getPool } = await import("../db.js");
+      const queryMock = vi.fn(async (sql: string) => {
+        if (sql.includes("SELECT id FROM documents")) {
+          return { rows: [{ id: "doc-123" }] };
+        }
+        return { rows: [] };
+      });
+
+      (getPool as any).mockReturnValueOnce({
+        connect: vi.fn(async () => ({
+          query: queryMock,
+          release: vi.fn(),
+        })),
+      });
+
+      await expect(
+        submitTaskResult("task-123", {
+          chunkId: "base-id:0",
+          collection: "docs",
+          tier3: { summary: "ok" },
+        })
+      ).resolves.not.toThrow();
+
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("COALESCE(c.tier3_meta, '{}'::jsonb) || $2::jsonb"),
+        [null, null, "base-id", "docs", 0]
+      );
+
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET summary_short = COALESCE($1, summary_short)"),
+        [null, "ok", null, "base-id", "docs"]
+      );
+    });
   });
 
   describe("failTask", () => {
-    it("marks task as failed", async () => {
+    it("records chunk failure metadata and schedules retry", async () => {
       const { getPool } = await import("../db.js");
+      const queryMock = vi.fn(async (sql: string) => {
+        if (sql.includes("SELECT attempt, max_attempts, payload")) {
+          return {
+            rows: [
+              {
+                attempt: 1,
+                max_attempts: 3,
+                payload: {
+                  baseId: "base-id",
+                  collection: "docs",
+                  chunkIndex: 0,
+                },
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      });
+
       (getPool as any).mockReturnValueOnce({
         connect: vi.fn(async () => ({
-          query: vi.fn(async (sql: string) => {
-            if (sql.includes("SELECT attempt")) {
-              return { rows: [{ attempt: 1, max_attempts: 3 }] };
-            }
-            return { rows: [] };
-          }),
+          query: queryMock,
           release: vi.fn(),
         })),
       });
@@ -147,18 +196,41 @@ describe("internal service", () => {
       await expect(
         failTask("task-123", { error: "Test error" })
       ).resolves.not.toThrow();
+
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET enrichment_status = 'failed'"),
+        ["base-id", "docs", 0, "Test error", "task-123", 1, 3, false]
+      );
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET status = 'pending'"),
+        ["Test error", 60, "task-123"]
+      );
     });
 
-    it("moves to dead letter after max attempts", async () => {
+    it("records chunk failure metadata and moves to dead letter after max attempts", async () => {
       const { getPool } = await import("../db.js");
+      const queryMock = vi.fn(async (sql: string) => {
+        if (sql.includes("SELECT attempt, max_attempts, payload")) {
+          return {
+            rows: [
+              {
+                attempt: 3,
+                max_attempts: 3,
+                payload: {
+                  baseId: "base-id",
+                  collection: "docs",
+                  chunkId: "base-id:0",
+                },
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      });
+
       (getPool as any).mockReturnValueOnce({
         connect: vi.fn(async () => ({
-          query: vi.fn(async (sql: string) => {
-            if (sql.includes("SELECT attempt")) {
-              return { rows: [{ attempt: 3, max_attempts: 3 }] };
-            }
-            return { rows: [] };
-          }),
+          query: queryMock,
           release: vi.fn(),
         })),
       });
@@ -166,6 +238,15 @@ describe("internal service", () => {
       await expect(
         failTask("task-123", { error: "Final attempt failed" })
       ).resolves.not.toThrow();
+
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET enrichment_status = 'failed'"),
+        ["base-id", "docs", 0, "Final attempt failed", "task-123", 3, 3, true]
+      );
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET status = 'dead'"),
+        ["Final attempt failed", "task-123"]
+      );
     });
   });
 
