@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ingest } from "./ingest.js";
 import type { IngestRequest } from "./ingest.js";
+import { getPool } from "../db.js";
 
 // Mock the db module to avoid Postgres connection in tests
 vi.mock("../db.js", () => ({
@@ -15,8 +16,8 @@ vi.mock("../db.js", () => ({
   closePool: vi.fn(),
 }));
 
-// Mock ollama module
-vi.mock("../ollama.js", () => ({
+// Mock embeddings module
+vi.mock("../embeddings.js", () => ({
   embed: vi.fn(async (texts: string[]) =>
     texts.map(() => Array(768).fill(0.1))
   ),
@@ -35,6 +36,22 @@ describe("ingest service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  function containsNullByte(value: unknown): boolean {
+    if (typeof value === "string") {
+      return value.includes("\u0000");
+    }
+
+    if (Array.isArray(value)) {
+      return value.some((entry) => containsNullByte(entry));
+    }
+
+    if (value && typeof value === "object") {
+      return Object.values(value).some((entry) => containsNullByte(entry));
+    }
+
+    return false;
+  }
 
   it("ingests text items successfully", async () => {
     const request: IngestRequest = {
@@ -129,5 +146,128 @@ describe("ingest service", () => {
     expect(result.ok).toBe(true);
     expect(result.errors).toBeDefined();
     expect(result.errors!.length).toBeGreaterThan(0);
+  });
+
+  it("strips null bytes before writing document and chunk rows", async () => {
+    let documentInsertParams: unknown[] | undefined;
+    let chunkInsertParams: unknown[] | undefined;
+
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("INSERT INTO documents")) {
+        documentInsertParams = params;
+        return { rowCount: 1, rows: [{ id: "doc-1", base_id: "base-1" }] };
+      }
+
+      if (sql.includes("INSERT INTO chunks")) {
+        chunkInsertParams = params;
+        return { rowCount: 1, rows: [] };
+      }
+
+      if (sql.includes("SELECT identity_key")) {
+        return { rowCount: 0, rows: [] };
+      }
+
+      return { rowCount: 1, rows: [] };
+    });
+
+    vi.mocked(getPool).mockReturnValue({
+      connect: vi.fn(async () => ({
+        query,
+        release: vi.fn(),
+      })),
+    } as any);
+
+    const request: IngestRequest = {
+      items: [
+        {
+          text: "hello\u0000 world",
+          source: "test\u0000.pdf",
+          metadata: {
+            path: "folder/with\u0000null.pdf",
+            nested: {
+              note: "a\u0000b",
+            },
+          },
+        },
+      ],
+    };
+
+    const result = await ingest(request, "test-col");
+
+    expect(result.ok).toBe(true);
+    expect(documentInsertParams).toBeDefined();
+    expect(chunkInsertParams).toBeDefined();
+    expect(containsNullByte(documentInsertParams)).toBe(false);
+    expect(containsNullByte(chunkInsertParams)).toBe(false);
+  });
+
+  it("uses collection+identity conflict handling for overwrite upserts", async () => {
+    let documentInsertSql = "";
+
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("INSERT INTO documents")) {
+        documentInsertSql = sql;
+        return { rowCount: 1, rows: [{ id: "doc-1", base_id: "base-1" }] };
+      }
+
+      if (sql.includes("SELECT identity_key")) {
+        return { rowCount: 0, rows: [] };
+      }
+
+      return { rowCount: 1, rows: [] };
+    });
+
+    vi.mocked(getPool).mockReturnValue({
+      connect: vi.fn(async () => ({
+        query,
+        release: vi.fn(),
+      })),
+    } as any);
+
+    await ingest(
+      {
+        overwrite: true,
+        items: [{ text: "hello world", source: "test.txt" }],
+      },
+      "test-col"
+    );
+
+    expect(documentInsertSql).toContain("ON CONFLICT (collection, identity_key)");
+  });
+
+  it("uses generic conflict do nothing when overwrite is disabled", async () => {
+    let documentInsertSql = "";
+
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("INSERT INTO documents")) {
+        documentInsertSql = sql;
+        return { rowCount: 1, rows: [{ id: "doc-1", base_id: "base-1" }] };
+      }
+
+      if (sql.includes("SELECT identity_key")) {
+        return { rowCount: 0, rows: [] };
+      }
+
+      return { rowCount: 1, rows: [] };
+    });
+
+    vi.mocked(getPool).mockReturnValue({
+      connect: vi.fn(async () => ({
+        query,
+        release: vi.fn(),
+      })),
+    } as any);
+
+    await ingest(
+      {
+        overwrite: false,
+        items: [{ text: "hello world", source: "test.txt" }],
+      },
+      "test-col"
+    );
+
+    expect(documentInsertSql).toContain("ON CONFLICT");
+    expect(documentInsertSql).toContain("DO NOTHING");
+    expect(documentInsertSql).not.toContain("ON CONFLICT (collection, identity_key)");
   });
 });

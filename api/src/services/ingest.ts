@@ -7,7 +7,7 @@ import { fetchUrls } from "./url-fetch.js";
 import { extractContentAsync } from "./url-extract.js";
 import { getPool } from "../db.js";
 import { deriveIdentityKey, formatVector } from "../pg-helpers.js";
-import { embed as embedTexts } from "../ollama.js";
+import { embed as embedTexts } from "../embeddings.js";
 import { shouldStoreRawBlob, uploadRawBlob } from "../blob-store.js";
 
 // Enrichment functions using Postgres task_queue
@@ -69,6 +69,41 @@ function asNonEmptyString(value: unknown): string | null {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function stripNullBytes(value: string): string {
+  if (!value.includes("\u0000")) {
+    return value;
+  }
+
+  return value.replace(/\u0000/g, "");
+}
+
+function sanitizeJsonValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return stripNullBytes(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeJsonValue(entry));
+  }
+
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    const record = value as Record<string, unknown>;
+    const sanitized: Record<string, unknown> = {};
+
+    for (const [key, entry] of Object.entries(record)) {
+      sanitized[key] = sanitizeJsonValue(entry);
+    }
+
+    return sanitized;
+  }
+
+  return value;
+}
+
+function sanitizeMetadataRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return sanitizeJsonValue(value) as Record<string, unknown>;
 }
 
 function toSourceFromUrl(rawUrl: string): string {
@@ -217,12 +252,20 @@ export async function ingest(
         // Extract text from fetched content
         const extraction = await extractContentAsync(fetchResult.body, fetchResult.contentType);
         
-        if (extraction.strategy === "metadata-only" || !extraction.text) {
-          // Unsupported content type - add to errors (synchronous push is safe)
+        if (extraction.strategy === "metadata-only") {
           fetchErrors.push({
             url: item.url!,
             status: fetchResult.status,
             reason: `unsupported_content_type: ${fetchResult.contentType}`,
+          });
+          continue;
+        }
+
+        if (!extraction.text) {
+          fetchErrors.push({
+            url: item.url!,
+            status: fetchResult.status,
+            reason: `no_extractable_text: ${fetchResult.contentType}`,
           });
           continue;
         }
@@ -312,11 +355,14 @@ export async function ingest(
       continue;
     }
 
+    const sanitizedText = stripNullBytes(item.text);
+    const source = stripNullBytes(item.source);
+    const itemUrl = item.url ? stripNullBytes(item.url) : undefined;
     const docType = detectDocType(item);
-    const tier1Meta = extractTier1(item, docType);
-    const metadata: Record<string, unknown> = {
+    const tier1Meta = sanitizeMetadataRecord(extractTier1(item, docType));
+    const metadata = sanitizeMetadataRecord({
       ...(item.metadata ?? {}),
-    };
+    });
     
     // Copy filter-relevant fields from metadata to tier1Meta
     // Use explicit undefined checks to preserve falsy but valid values (empty strings, 0, etc.)
@@ -330,21 +376,21 @@ export async function ingest(
     const path = asNonEmptyString(metadata.path);
     const lang = asNonEmptyString(metadata.lang) ?? asNonEmptyString(tier1Meta.lang);
 
-    const { rawBytes, rawMimeType } = resolveRawPayload(item, item.source, item.text, metadata);
+    const { rawBytes, rawMimeType } = resolveRawPayload(item, source, sanitizedText, metadata);
 
     processedItems.push({
       baseId: item.id ?? randomUUID(),
-      identityKey: deriveIdentityKey(item.source),
+      identityKey: deriveIdentityKey(source),
       payloadChecksum: computePayloadChecksum(rawBytes),
       docType,
       tier1Meta,
-      chunks: chunkText(item.text),
-      source: item.source,
+      chunks: chunkText(sanitizedText),
+      source,
       repoId,
       repoUrl,
       path,
       lang,
-      itemUrl: item.url,
+      itemUrl,
       metadata,
       rawData: rawBytes,
       rawMimeType,
@@ -400,9 +446,9 @@ export async function ingest(
                 base_id, identity_key, source, item_url, doc_type, collection, repo_id, repo_url, path, lang, metadata, payload_checksum, raw_key, raw_bytes, mime_type, ingested_at
               , raw_data
               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-              ON CONFLICT (collection, identity_key) 
+              ON CONFLICT (collection, identity_key)
               DO UPDATE SET
-                base_id = documents.base_id,
+                source = EXCLUDED.source,
                 item_url = EXCLUDED.item_url,
                 doc_type = EXCLUDED.doc_type,
                 repo_id = EXCLUDED.repo_id,
@@ -421,7 +467,7 @@ export async function ingest(
                 base_id, identity_key, source, item_url, doc_type, collection, repo_id, repo_url, path, lang, metadata, payload_checksum, raw_key, raw_bytes, mime_type, ingested_at
               , raw_data
               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-              ON CONFLICT (collection, identity_key)
+              ON CONFLICT
               DO NOTHING
               RETURNING id, base_id`,
           [

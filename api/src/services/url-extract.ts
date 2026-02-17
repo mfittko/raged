@@ -1,12 +1,31 @@
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import { PDFParse } from "pdf-parse";
+import TurndownService from "turndown";
 
 export interface ExtractionResult {
   text: string | null;        // null for unsupported types
   title?: string;             // from HTML/PDF metadata
   strategy: "readability" | "passthrough" | "pdf-parse" | "metadata-only";
   contentType: string;
+}
+
+const turndown = new TurndownService({
+  headingStyle: "atx",
+  bulletListMarker: "-",
+  codeBlockStyle: "fenced",
+});
+
+function toMarkdown(html: string | null | undefined): string {
+  if (!html) {
+    return "";
+  }
+
+  try {
+    return turndown.turndown(html).trim();
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -38,8 +57,11 @@ export function extractContent(body: Buffer, contentType: string): ExtractionRes
       const article = reader.parse();
       
       if (article) {
+        const markdown = toMarkdown(article.content);
+        const fallbackText = article.textContent?.trim() || null;
+
         return {
-          text: article.textContent ?? null,
+          text: markdown || fallbackText,
           title: article.title ?? undefined,
           strategy: "readability",
           contentType: normalized,
@@ -47,8 +69,11 @@ export function extractContent(body: Buffer, contentType: string): ExtractionRes
       }
       
       // Fallback if Readability fails
+      const bodyMarkdown = toMarkdown(dom.window.document.body?.innerHTML);
+      const bodyText = dom.window.document.body?.textContent?.trim() || null;
+
       return {
-        text: dom.window.document.body?.textContent || null,
+        text: bodyMarkdown || bodyText,
         strategy: "readability",
         contentType: normalized,
       };

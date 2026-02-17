@@ -15,7 +15,7 @@ vi.mock("../db.js", () => ({
   })),
 }));
 
-vi.mock("../ollama.js", () => ({
+vi.mock("../embeddings.js", () => ({
   embed: vi.fn(async (texts: string[]) => texts.map(() => Array(3).fill(0.1))),
 }));
 
@@ -143,6 +143,39 @@ describe("ingest integration (Postgres)", () => {
     expect(result.upserted).toBe(0);
     expect(result.errors).toBeDefined();
     expect(result.errors?.[0]?.reason).toContain("unsupported_content_type");
+  });
+
+  it("returns no_extractable_text for supported content types with empty extraction", async () => {
+    mockedFetchUrls.mockResolvedValue({
+      results: new Map([
+        [
+          "https://example.com/empty",
+          {
+            url: "https://example.com/empty",
+            resolvedUrl: "https://example.com/empty",
+            contentType: "text/html; charset=UTF-8",
+            status: 200,
+            body: Buffer.from("<html><body></body></html>"),
+            fetchedAt: "2026-02-16T00:00:00Z",
+          },
+        ],
+      ]),
+      errors: [],
+    });
+
+    mockedExtractContentAsync.mockResolvedValue({
+      text: null,
+      strategy: "readability",
+      contentType: "text/html",
+    });
+
+    const result = await ingest({ items: [{ url: "https://example.com/empty" }] }, "docs");
+
+    expect(result.ok).toBe(true);
+    expect(result.upserted).toBe(0);
+    expect(result.errors).toBeDefined();
+    expect(result.errors?.[0]?.reason).toContain("no_extractable_text");
+    expect(result.errors?.[0]?.reason).toContain("text/html; charset=UTF-8");
   });
 
   it("preserves existing base_id on identity conflict and uses returned base_id for tasks", async () => {
