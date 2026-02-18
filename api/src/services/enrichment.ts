@@ -22,7 +22,21 @@ export interface EnrichmentStatusResult {
   metadata?: {
     tier2?: Record<string, unknown>;
     tier3?: Record<string, unknown>;
+    error?: {
+      message: string;
+      taskId?: string;
+      attempt?: number;
+      maxAttempts?: number;
+      final?: boolean;
+      failedAt?: string;
+      chunkIndex?: number;
+    };
   };
+}
+
+export interface EnrichmentStatsRequest {
+  collection?: string;
+  filter?: string;
 }
 
 export interface EnrichmentStatsResult {
@@ -43,6 +57,17 @@ export interface EnrichmentStatsResult {
 export interface EnqueueRequest {
   collection?: string;
   force?: boolean;
+  filter?: string;
+}
+
+export interface ClearRequest {
+  collection?: string;
+  filter?: string;
+}
+
+export interface ClearResult {
+  ok: true;
+  cleared: number;
 }
 
 export interface EnqueueResult {
@@ -92,6 +117,15 @@ export async function getEnrichmentStatus(
   let latestExtractedAt: string | undefined;
   let tier2Meta: Record<string, unknown> | undefined;
   let tier3Meta: Record<string, unknown> | undefined;
+  let errorMeta: {
+    message: string;
+    taskId?: string;
+    attempt?: number;
+    maxAttempts?: number;
+    final?: boolean;
+    failedAt?: string;
+    chunkIndex?: number;
+  } | undefined;
 
   for (const chunk of result.rows) {
     const status = chunk.enrichment_status || "none";
@@ -110,6 +144,22 @@ export async function getEnrichmentStatus(
       }
       if (chunk.tier3_meta) {
         tier3Meta = chunk.tier3_meta;
+      }
+    }
+
+    // Extract error metadata from tier3_meta._error
+    if (status === "failed" && chunk.tier3_meta && typeof chunk.tier3_meta === "object") {
+      const error = (chunk.tier3_meta as any)._error;
+      if (error && typeof error === "object") {
+        errorMeta = {
+          message: error.message || "Unknown error",
+          taskId: error.taskId,
+          attempt: error.attempt,
+          maxAttempts: error.maxAttempts,
+          final: error.final,
+          failedAt: error.failedAt,
+          chunkIndex: error.chunkIndex,
+        };
       }
     }
   }
@@ -144,24 +194,73 @@ export async function getEnrichmentStatus(
     statusResult.extractedAt = latestExtractedAt;
   }
 
-  if (tier2Meta || tier3Meta) {
+  if (tier2Meta || tier3Meta || errorMeta) {
     statusResult.metadata = {};
     if (tier2Meta) statusResult.metadata.tier2 = tier2Meta;
     if (tier3Meta) statusResult.metadata.tier3 = tier3Meta;
+    if (errorMeta) statusResult.metadata.error = errorMeta;
   }
 
   return statusResult;
 }
 
-export async function getEnrichmentStats(): Promise<EnrichmentStatsResult> {
+export async function getEnrichmentStats(request?: EnrichmentStatsRequest): Promise<EnrichmentStatsResult> {
   const pool = getPool();
+  const col = request?.collection || "docs";
+  const filter = request?.filter;
+
+  // Build filter clause for dual-mode search
+  let queueFilterClause = "";
+  let chunksFilterClause = "";
+  const queueParams: unknown[] = [];
+  const chunksParams: unknown[] = [];
+
+  if (filter) {
+    const queueFilterPattern = `%${filter}%`;
+    queueFilterClause = ` AND (
+      to_tsvector('simple', concat_ws(' ',
+        t.payload->>'text',
+        t.payload->>'source',
+        t.payload->>'baseId',
+        t.payload->>'docType'
+      )) @@ websearch_to_tsquery('simple', $1)
+      OR t.payload->>'text' ILIKE $2
+      OR t.payload->>'source' ILIKE $2
+      OR t.payload->>'baseId' ILIKE $2
+      OR t.payload->>'docType' ILIKE $2
+    )`;
+    queueParams.push(filter, queueFilterPattern);
+
+    const chunksFilterPattern = `%${filter}%`;
+    chunksFilterClause = ` WHERE (
+      to_tsvector('simple', concat_ws(' ',
+        c.text,
+        d.source,
+        c.doc_type,
+        d.summary,
+        d.summary_short,
+        d.summary_medium,
+        d.summary_long
+      )) @@ websearch_to_tsquery('simple', $1)
+      OR c.text ILIKE $2
+      OR d.source ILIKE $2
+      OR c.doc_type ILIKE $2
+      OR d.summary ILIKE $2
+      OR d.summary_short ILIKE $2
+      OR d.summary_medium ILIKE $2
+      OR d.summary_long ILIKE $2
+    )`;
+    chunksParams.push(filter, chunksFilterPattern);
+  }
 
   // Get queue stats from task_queue
   const queueResult = await pool.query<{ status: string; count: number }>(
     `SELECT status, COUNT(*)::int AS count
-    FROM task_queue
-    WHERE queue = 'enrichment'
-    GROUP BY status`
+    FROM task_queue t
+    WHERE t.queue = 'enrichment'
+      AND COALESCE(t.payload->>'collection', 'docs') = $${queueParams.length + 1}${queueFilterClause}
+    GROUP BY status`,
+    [...queueParams, col]
   );
 
   const queueCounts = {
@@ -182,9 +281,12 @@ export async function getEnrichmentStats(): Promise<EnrichmentStatsResult> {
 
   // Get totals from chunks table
   const chunksResult = await pool.query<{ enrichment_status: string; count: number }>(
-    `SELECT enrichment_status, COUNT(*)::int AS count
-    FROM chunks
-    GROUP BY enrichment_status`
+    `SELECT c.enrichment_status, COUNT(*)::int AS count
+    FROM chunks c
+    JOIN documents d ON c.document_id = d.id${chunksFilterClause}
+      ${filter ? "AND" : "WHERE"} d.collection = $${chunksParams.length + 1}
+    GROUP BY c.enrichment_status`,
+    [...chunksParams, col]
   );
 
   const totals = {
@@ -221,6 +323,32 @@ export async function enqueueEnrichment(
     filterSql = " AND c.enrichment_status != 'enriched'";
   }
 
+  // Add text filter if provided
+  let textFilterClause = "";
+  const baseParams: unknown[] = [col];
+  if (request.filter) {
+    const filterPattern = `%${request.filter}%`;
+    textFilterClause = ` AND (
+      to_tsvector('simple', concat_ws(' ',
+        c.text,
+        d.source,
+        c.doc_type,
+        d.summary,
+        d.summary_short,
+        d.summary_medium,
+        d.summary_long
+      )) @@ websearch_to_tsquery('simple', $${baseParams.length + 1})
+      OR c.text ILIKE $${baseParams.length + 2}
+      OR d.source ILIKE $${baseParams.length + 2}
+      OR c.doc_type ILIKE $${baseParams.length + 2}
+      OR d.summary ILIKE $${baseParams.length + 2}
+      OR d.summary_short ILIKE $${baseParams.length + 2}
+      OR d.summary_medium ILIKE $${baseParams.length + 2}
+      OR d.summary_long ILIKE $${baseParams.length + 2}
+    )`;
+    baseParams.push(request.filter, filterPattern);
+  }
+
   interface ChunkRow {
     chunk_id: string;
     document_id: string;
@@ -242,10 +370,10 @@ export async function enqueueEnrichment(
   try {
     while (true) {
       const cursorClause: string = lastDocumentId
-        ? ` AND (d.id > $2::uuid OR (d.id = $2::uuid AND c.chunk_index > $3))`
+        ? ` AND (d.id > $${baseParams.length + 1}::uuid OR (d.id = $${baseParams.length + 1}::uuid AND c.chunk_index > $${baseParams.length + 2}))`
         : "";
 
-      const queryParams: unknown[] = [col];
+      const queryParams: unknown[] = [...baseParams];
       if (lastDocumentId) {
         queryParams.push(lastDocumentId, lastChunkIndex);
       }
@@ -264,7 +392,7 @@ export async function enqueueEnrichment(
           c.tier1_meta
         FROM chunks c
         JOIN documents d ON c.document_id = d.id
-        WHERE d.collection = $1${filterSql}${cursorClause}
+        WHERE d.collection = $1${filterSql}${textFilterClause}${cursorClause}
         ORDER BY d.id, c.chunk_index
         LIMIT $${limitParam}`,
         queryParams
@@ -341,4 +469,43 @@ export async function enqueueEnrichment(
   }
 
   return { ok: true, enqueued };
+}
+
+export async function clearEnrichmentQueue(
+  request: ClearRequest,
+  collection?: string,
+): Promise<ClearResult> {
+  const col = collection || request.collection || "docs";
+  const pool = getPool();
+
+  // Build filter clause if provided
+  let filterClause = "";
+  const params: unknown[] = [col];
+  if (request.filter) {
+    const filterPattern = `%${request.filter}%`;
+    filterClause = ` AND (
+      to_tsvector('simple', concat_ws(' ',
+        t.payload->>'text',
+        t.payload->>'source',
+        t.payload->>'baseId',
+        t.payload->>'docType'
+      )) @@ websearch_to_tsquery('simple', $${params.length + 1})
+      OR t.payload->>'text' ILIKE $${params.length + 2}
+      OR t.payload->>'source' ILIKE $${params.length + 2}
+      OR t.payload->>'baseId' ILIKE $${params.length + 2}
+      OR t.payload->>'docType' ILIKE $${params.length + 2}
+    )`;
+    params.push(request.filter, filterPattern);
+  }
+
+  const result = await pool.query(
+    `DELETE FROM task_queue t
+    WHERE t.queue = 'enrichment'
+      AND t.status IN ('pending', 'processing', 'dead')
+      AND COALESCE(t.payload->>'collection', 'docs') = $1${filterClause}
+    RETURNING t.id`,
+    params
+  );
+
+  return { ok: true, cleared: result.rowCount || 0 };
 }

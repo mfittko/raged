@@ -17,7 +17,7 @@ import type { IngestRequest } from "./services/ingest.js";
 import { validateIngestRequest } from "./services/ingest-validation.js";
 import { ingest } from "./services/ingest.js";
 import { query } from "./services/query.js";
-import { getEnrichmentStatus, getEnrichmentStats, enqueueEnrichment } from "./services/enrichment.js";
+import { getEnrichmentStatus, getEnrichmentStats, enqueueEnrichment, clearEnrichmentQueue } from "./services/enrichment.js";
 import { claimTask, submitTaskResult, failTask, recoverStaleTasks } from "./services/internal.js";
 import { getPool } from "./db.js";
 
@@ -92,14 +92,21 @@ export function buildApp() {
     return reply.send(result);
   });
 
-  app.get("/enrichment/stats", async (_req, reply) => {
-    const result = await getEnrichmentStats();
+  app.get("/enrichment/stats", async (req, reply) => {
+    const { collection, filter } = req.query as { collection?: string; filter?: string };
+    const result = await getEnrichmentStats({ collection, filter });
     return reply.send(result);
   });
 
   app.post("/enrichment/enqueue", { schema: enrichmentEnqueueSchema }, async (req, reply) => {
     const body = req.body as any;
     const result = await enqueueEnrichment(body, body.collection);
+    return reply.send(result);
+  });
+
+  app.post("/enrichment/clear", async (req, reply) => {
+    const body = req.body as any;
+    const result = await clearEnrichmentQueue(body, body.collection);
     return reply.send(result);
   });
 
