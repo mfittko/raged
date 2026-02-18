@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { extractContent, extractContentAsync } from "./url-extract.js";
 
 describe("Content extraction service", () => {
@@ -48,6 +48,31 @@ describe("Content extraction service", () => {
       expect(result.strategy).toBe("readability");
       expect(result.contentType).toBe("text/html");
       // Should still return something (fallback to body text)
+    });
+
+    it("uses turndown/plaintext strategy when Readability returns null", async () => {
+      vi.resetModules();
+      vi.doMock("@mozilla/readability", () => ({
+        Readability: class {
+          parse() {
+            return null;
+          }
+        },
+      }));
+
+      try {
+        const { extractContent: extractWithMock } = await import("./url-extract.js");
+        const result = extractWithMock(
+          Buffer.from("<html><body><p>Fallback text</p></body></html>", "utf-8"),
+          "text/html"
+        );
+
+        expect(["turndown", "plaintext"]).toContain(result.strategy);
+        expect(result.text).toContain("Fallback text");
+      } finally {
+        vi.doUnmock("@mozilla/readability");
+        vi.resetModules();
+      }
     });
   });
 
