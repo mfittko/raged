@@ -201,7 +201,26 @@ describe("ingest service", () => {
     expect(containsNullByte(chunkInsertParams)).toBe(false);
   });
 
-  it("rejects metadata exceeding maximum nesting depth", async () => {
+  it("reports error for metadata exceeding maximum nesting depth", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("INSERT INTO documents")) {
+        return { rowCount: 1, rows: [{ id: "doc-1", base_id: "base-1" }] };
+      }
+
+      if (sql.includes("SELECT identity_key")) {
+        return { rowCount: 0, rows: [] };
+      }
+
+      return { rowCount: 1, rows: [] };
+    });
+
+    vi.mocked(getPool).mockReturnValue({
+      connect: vi.fn(async () => ({
+        query,
+        release: vi.fn(),
+      })),
+    } as any);
+
     const deepMetadata: Record<string, unknown> = {};
     let cursor: Record<string, unknown> = deepMetadata;
     for (let i = 0; i < 70; i++) {
@@ -220,9 +239,14 @@ describe("ingest service", () => {
       ],
     };
 
-    await expect(ingest(request, "test-col")).rejects.toThrow(
-      "metadata exceeds maximum nesting depth"
-    );
+    const result = await ingest(request, "test-col");
+
+    expect(result.ok).toBe(true);
+    expect(result.upserted).toBe(0);
+    expect(result.errors).toBeDefined();
+    expect(result.errors!.length).toBe(1);
+    expect(result.errors![0].reason).toContain("invalid_metadata");
+    expect(result.errors![0].reason).toContain("nesting depth");
   });
 
   it("uses collection+identity conflict handling for overwrite upserts", async () => {
@@ -293,5 +317,91 @@ describe("ingest service", () => {
     expect(documentInsertSql).toContain("ON CONFLICT");
     expect(documentInsertSql).toContain("DO NOTHING");
     expect(documentInsertSql).not.toContain("ON CONFLICT (collection, identity_key)");
+  });
+
+  it("reports error for circular reference in metadata and continues with other items", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("INSERT INTO documents")) {
+        return { rowCount: 1, rows: [{ id: "doc-1", base_id: "base-1" }] };
+      }
+
+      if (sql.includes("SELECT identity_key")) {
+        return { rowCount: 0, rows: [] };
+      }
+
+      return { rowCount: 1, rows: [] };
+    });
+
+    vi.mocked(getPool).mockReturnValue({
+      connect: vi.fn(async () => ({
+        query,
+        release: vi.fn(),
+      })),
+    } as any);
+
+    // Create circular reference
+    const circularMeta: any = { foo: "bar" };
+    circularMeta.self = circularMeta;
+
+    const result = await ingest(
+      {
+        items: [
+          { text: "bad item", source: "bad.txt", metadata: circularMeta },
+          { text: "good item", source: "good.txt", metadata: { valid: "data" } },
+        ],
+      },
+      "test-col"
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.upserted).toBe(1); // Only the good item
+    expect(result.errors).toBeDefined();
+    expect(result.errors!.length).toBe(1);
+    expect(result.errors![0].reason).toContain("invalid_metadata");
+    expect(result.errors![0].reason).toContain("circular");
+  });
+
+  it("reports error for deeply nested metadata and continues with other items", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("INSERT INTO documents")) {
+        return { rowCount: 1, rows: [{ id: "doc-1", base_id: "base-1" }] };
+      }
+
+      if (sql.includes("SELECT identity_key")) {
+        return { rowCount: 0, rows: [] };
+      }
+
+      return { rowCount: 1, rows: [] };
+    });
+
+    vi.mocked(getPool).mockReturnValue({
+      connect: vi.fn(async () => ({
+        query,
+        release: vi.fn(),
+      })),
+    } as any);
+
+    // Create deeply nested metadata (exceeds MAX_METADATA_NESTING_DEPTH of 64)
+    let deepMeta: any = { value: "end" };
+    for (let i = 0; i < 70; i++) {
+      deepMeta = { nested: deepMeta };
+    }
+
+    const result = await ingest(
+      {
+        items: [
+          { text: "bad item", source: "bad.txt", metadata: deepMeta },
+          { text: "good item", source: "good.txt", metadata: { valid: "data" } },
+        ],
+      },
+      "test-col"
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.upserted).toBe(1); // Only the good item
+    expect(result.errors).toBeDefined();
+    expect(result.errors!.length).toBe(1);
+    expect(result.errors![0].reason).toContain("invalid_metadata");
+    expect(result.errors![0].reason).toContain("nesting depth");
   });
 });

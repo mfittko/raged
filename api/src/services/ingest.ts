@@ -427,10 +427,26 @@ export async function ingest(
     const source = stripNullBytes(item.source);
     const itemUrl = item.url ? stripNullBytes(item.url) : undefined;
     const docType = detectDocType(item);
-    const tier1Meta = sanitizeMetadataRecord(extractTier1(item, docType));
-    const metadata = sanitizeMetadataRecord({
-      ...(item.metadata ?? {}),
-    });
+
+    // Sanitize metadata with error handling for malformed data
+    let tier1Meta: Record<string, unknown>;
+    let metadata: Record<string, unknown>;
+
+    try {
+      tier1Meta = sanitizeMetadataRecord(extractTier1(item, docType));
+      metadata = sanitizeMetadataRecord({
+        ...(item.metadata ?? {}),
+      });
+    } catch (error) {
+      // Handle sanitization failures per item (depth/cycle errors)
+      const errorMessage = error instanceof Error ? error.message : "metadata sanitization failed";
+      fetchErrors.push({
+        url: item.url || item.source || "(unknown)",
+        status: null,
+        reason: `invalid_metadata: ${errorMessage}`,
+      });
+      continue;
+    }
     
     // Copy filter-relevant fields from metadata to tier1Meta
     // Use explicit undefined checks to preserve falsy but valid values (empty strings, 0, etc.)
