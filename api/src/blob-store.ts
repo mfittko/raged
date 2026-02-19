@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import path from "node:path";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 
@@ -177,7 +178,7 @@ export async function downloadRawBlobStream(key: string): Promise<RawBlobDownloa
 
   // Strategy 2: Web stream (edge/browser runtime)
   if (typeof (body as { transformToWebStream?: unknown }).transformToWebStream === "function") {
-    const webStream = (body as { transformToWebStream: () => ReadableStream }).transformToWebStream();
+    const webStream = (body as { transformToWebStream: () => unknown }).transformToWebStream() as WebReadableStream;
     return {
       stream: Readable.fromWeb(webStream),
       contentLength: typeof response.ContentLength === "number" ? response.ContentLength : null,
