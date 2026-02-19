@@ -33,18 +33,32 @@ export const ingestSchema = {
   },
 };
 
+const queryBodyProperties = {
+  collection: { type: "string" as const },
+  query: { type: "string" as const, minLength: 1, pattern: "\\S" },
+  topK: { type: "integer" as const, minimum: 1, maximum: 100 },
+  minScore: { type: "number" as const, minimum: 0, maximum: 1 },
+  filter: { type: "object" as const },
+};
+
 export const querySchema = {
   body: {
     type: "object" as const,
     additionalProperties: false as const,
     required: ["query"],
     properties: {
-      collection: { type: "string" as const },
-      query: { type: "string" as const, minLength: 1, pattern: "\\S" },
-      topK: { type: "integer" as const, minimum: 1, maximum: 100 },
-      filter: { type: "object" as const },
+      ...queryBodyProperties,
       graphExpand: { type: "boolean" as const },
     },
+  },
+};
+
+export const queryDownloadFirstSchema = {
+  body: {
+    type: "object" as const,
+    additionalProperties: false as const,
+    required: ["query"],
+    properties: queryBodyProperties,
   },
 };
 

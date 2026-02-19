@@ -345,4 +345,59 @@ describe("query schema validation", () => {
     expect(res.statusCode).toBe(200);
     await app.close();
   });
+
+  it("accepts valid minScore between 0 and 1", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "authentication flow", minScore: 0.5 },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("accepts minScore of 0", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "authentication flow", minScore: 0 },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("accepts minScore of 1", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "authentication flow", minScore: 1 },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("rejects minScore below 0", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "authentication flow", minScore: -0.1 },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects minScore above 1", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "authentication flow", minScore: 1.1 },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
 });

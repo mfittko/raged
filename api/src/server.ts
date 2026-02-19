@@ -6,6 +6,7 @@ import { registerErrorHandler } from "./errors.js";
 import { 
   ingestSchema, 
   querySchema, 
+  queryDownloadFirstSchema,
   enrichmentStatusSchema, 
   enrichmentStatsSchema,
   enrichmentEnqueueSchema, 
@@ -20,8 +21,12 @@ import { validateIngestRequest } from "./services/ingest-validation.js";
 import { ingest } from "./services/ingest.js";
 import { query } from "./services/query.js";
 import { getEnrichmentStatus, getEnrichmentStats, enqueueEnrichment, clearEnrichmentQueue } from "./services/enrichment.js";
+import { listCollections } from "./services/collections.js";
 import { claimTask, submitTaskResult, failTask, recoverStaleTasks } from "./services/internal.js";
 import { getPool } from "./db.js";
+import { downloadRawBlobStream } from "./blob-store.js";
+import path from "node:path";
+import type { Readable } from "node:stream";
 
 export function buildApp() {
   // Trust proxy only when explicitly enabled via env var for security
@@ -83,6 +88,151 @@ export function buildApp() {
   app.post("/query", { schema: querySchema }, async (req, reply) => {
     const body = req.body as any;
     const result = await query(body, body.collection);
+    return reply.send(result);
+  });
+
+  function deriveFileName(source: string, mimeType: string): string {
+    let pathLike = source;
+    try {
+      const url = new URL(source);
+      if (url.pathname) {
+        pathLike = url.pathname;
+      }
+    } catch {
+      // Not a URL; treat source as plain path/identifier
+    }
+
+    const segments = pathLike.split("/").filter((segment) => segment.length > 0);
+    const candidate = segments.length > 0 ? segments[segments.length - 1] : "download";
+    let sanitized = candidate.replace(/[\x00-\x1f\x7f"]/g, "_");
+    if (sanitized.length === 0 || sanitized === "." || sanitized === "..") {
+      sanitized = "download";
+    }
+
+    if (path.extname(sanitized).length > 0) {
+      return sanitized;
+    }
+    const mimeToExt: Record<string, string> = {
+      "application/pdf": ".pdf",
+      "text/html": ".html",
+      "text/plain": ".txt",
+      "text/markdown": ".md",
+      "application/json": ".json",
+      "image/png": ".png",
+      "image/jpeg": ".jpg",
+      "image/gif": ".gif",
+      "image/webp": ".webp",
+    };
+    const ext = mimeToExt[mimeType] ?? ".bin";
+    return `${sanitized}${ext}`;
+  }
+
+  app.post("/query/download-first", { schema: queryDownloadFirstSchema }, async (req, reply) => {
+    const body = req.body as any;
+    const queryResult = await query(body, body.collection);
+    const first = queryResult.results[0];
+    if (!first) {
+      return reply.status(404).send({ error: "No results found for query" });
+    }
+
+    const baseId = first.payload?.baseId as string | undefined;
+    if (!baseId) {
+      return reply.status(404).send({ error: "Result has no baseId" });
+    }
+
+    const col = body.collection || "docs";
+    const pool = getPool();
+    const docResult = await pool.query<{
+      raw_data: Buffer | null;
+      raw_key: string | null;
+      source: string;
+      mime_type: string | null;
+    }>(
+      `SELECT raw_data, raw_key, source, mime_type FROM documents WHERE base_id = $1 AND collection = $2 LIMIT 1`,
+      [baseId, col]
+    );
+
+    const doc = docResult.rows[0];
+    if (!doc) {
+      return reply.status(404).send({ error: `Document not found: ${baseId}` });
+    }
+
+    let responseBody: Buffer | Readable;
+    if (doc.raw_data !== null) {
+      responseBody = doc.raw_data;
+    } else if (doc.raw_key) {
+      try {
+        const blob = await downloadRawBlobStream(doc.raw_key);
+        responseBody = blob.stream;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        return reply.status(502).send({ error: `Failed to retrieve document from blob store: ${message}` });
+      }
+    } else {
+      return reply.status(404).send({ error: "No raw data available for document" });
+    }
+
+    const mimeType = doc.mime_type || "application/octet-stream";
+    const fileName = deriveFileName(doc.source, mimeType);
+    const safeSource = doc.source.replace(/[\x00-\x1f\x7f]/g, "_");
+
+    return reply
+      .header("Content-Type", mimeType)
+      .header("Content-Disposition", `attachment; filename="${fileName}"`)
+      .header("X-Raged-Source", safeSource)
+      .send(responseBody);
+  });
+
+  app.post("/query/fulltext-first", { schema: queryDownloadFirstSchema }, async (req, reply) => {
+    const body = req.body as any;
+    const queryResult = await query(body, body.collection);
+    const first = queryResult.results[0];
+    if (!first) {
+      return reply.status(404).send({ error: "No results found for query" });
+    }
+
+    const baseId = first.payload?.baseId as string | undefined;
+    if (!baseId) {
+      return reply.status(404).send({ error: "Result has no baseId" });
+    }
+
+    const col = body.collection || "docs";
+    const pool = getPool();
+    const chunksResult = await pool.query<{
+      text: string;
+      source: string;
+    }>(
+      `SELECT c.text, d.source
+      FROM documents d
+      JOIN chunks c ON c.document_id = d.id
+      WHERE d.base_id = $1 AND d.collection = $2
+      ORDER BY c.chunk_index`,
+      [baseId, col]
+    );
+
+    if (chunksResult.rows.length === 0) {
+      return reply.status(404).send({ error: `No chunks found for document: ${baseId}` });
+    }
+
+    const source = chunksResult.rows[0]?.source || baseId;
+    const segment = source.split("/").pop() || source;
+    const baseName = path.basename(segment.replace(/[\x00-\x1f\x7f"]/g, "_"), path.extname(segment));
+    const fullText = chunksResult.rows
+      .map((r) => r.text)
+      .filter((t) => t && t.trim().length > 0)
+      .join("\n\n");
+    const safeSource = source.replace(/[\x00-\x1f\x7f]/g, "_");
+
+    return reply
+      .header("Content-Type", "text/plain; charset=utf-8")
+      .header("Content-Disposition", `attachment; filename="${baseName}.txt"`)
+      .header("X-Raged-Source", safeSource)
+      .send(fullText);
+  });
+
+  // Collections endpoint
+  app.get("/collections", async (_req, reply) => {
+    const result = await listCollections();
     return reply.send(result);
   });
 

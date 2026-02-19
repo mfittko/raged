@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import path from "node:path";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 
 interface BlobStoreConfig {
   endpoint: string;
@@ -22,6 +24,12 @@ export interface RawUploadResult {
   key: string;
   bytes: number;
   mimeType: string;
+}
+
+export interface RawBlobDownloadResult {
+  stream: Readable;
+  contentLength: number | null;
+  contentType: string | null;
 }
 
 // Cached S3 client to avoid per-upload instantiation overhead
@@ -138,4 +146,54 @@ export async function uploadRawBlob(input: RawUploadInput): Promise<RawUploadRes
     bytes,
     mimeType,
   };
+}
+
+export async function downloadRawBlobStream(key: string): Promise<RawBlobDownloadResult> {
+  const config = getBlobStoreConfig();
+  if (!config) {
+    throw new Error("blob store is not configured");
+  }
+
+  const client = getS3Client(config);
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: config.bucket,
+      Key: key,
+    }),
+  );
+
+  const body = response.Body;
+  if (!body) {
+    throw new Error(`Empty response body for key: ${key}`);
+  }
+
+  // Strategy 1: Readable stream (Node.js runtime)
+  if (body instanceof Readable) {
+    return {
+      stream: body,
+      contentLength: typeof response.ContentLength === "number" ? response.ContentLength : null,
+      contentType: response.ContentType ?? null,
+    };
+  }
+
+  // Strategy 2: Web stream (edge/browser runtime)
+  if (typeof (body as { transformToWebStream?: unknown }).transformToWebStream === "function") {
+    const webStream = (body as { transformToWebStream: () => unknown }).transformToWebStream() as WebReadableStream;
+    return {
+      stream: Readable.fromWeb(webStream),
+      contentLength: typeof response.ContentLength === "number" ? response.ContentLength : null,
+      contentType: response.ContentType ?? null,
+    };
+  }
+
+  throw new Error("Unsupported response body type from blob store");
+}
+
+export async function downloadRawBlob(key: string): Promise<Buffer> {
+  const { stream } = await downloadRawBlobStream(key);
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+  }
+  return Buffer.concat(chunks);
 }

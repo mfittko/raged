@@ -1,13 +1,26 @@
 import { getPool } from "../db.js";
 import { translateFilter } from "../pg-helpers.js";
-import { embed as embedTexts } from "../ollama.js";
+import { embed as embedTexts } from "../embeddings.js";
 
 export interface QueryRequest {
   collection?: string;
   query: string;
   topK?: number;
+  minScore?: number;
   filter?: Record<string, unknown>;
   graphExpand?: boolean;
+}
+
+export function countQueryTerms(value: string): number {
+  return value.trim().split(/\s+/).filter((t) => t.length > 0).length;
+}
+
+export function getAutoMinScore(queryText: string): number {
+  const terms = countQueryTerms(queryText);
+  if (terms <= 1) return 0.3;
+  if (terms === 2) return 0.4;
+  if (terms <= 4) return 0.5;
+  return 0.6;
 }
 
 export interface QueryResultItem {
@@ -52,9 +65,11 @@ export async function query(
     throw new Error("Embedding failed: no vector returned");
   }
   const topK = request.topK ?? 8;
+  const minScore = request.minScore ?? getAutoMinScore(request.query);
+  const maxDistance = 1 - minScore;
 
-  // Translate filter to Postgres WHERE clause (offset by 3 for base params: $1=collection, $2=vector, $3=topK)
-  const { sql: filterSql, params: filterParams } = translateFilter(request.filter, 3);
+  // Translate filter to Postgres WHERE clause (offset by 4 for base params: $1=collection, $2=vector, $3=topK, $4=maxDistance)
+  const { sql: filterSql, params: filterParams } = translateFilter(request.filter, 4);
 
   // Build query with pgvector cosine distance
   const pool = getPool();
@@ -76,6 +91,11 @@ export async function query(
     tier1_meta: Record<string, unknown> | null;
     tier2_meta: Record<string, unknown> | null;
     tier3_meta: Record<string, unknown> | null;
+    doc_summary: string | null;
+    doc_summary_short: string | null;
+    doc_summary_medium: string | null;
+    doc_summary_long: string | null;
+    payload_checksum: string | null;
   }>(
     `SELECT 
       c.id::text || ':' || c.chunk_index::text AS chunk_id,
@@ -92,13 +112,20 @@ export async function query(
       c.item_url,
       c.tier1_meta,
       c.tier2_meta,
-      c.tier3_meta
+      c.tier3_meta,
+      d.summary AS doc_summary,
+      d.summary_short AS doc_summary_short,
+      d.summary_medium AS doc_summary_medium,
+      d.summary_long AS doc_summary_long,
+      d.payload_checksum
     FROM chunks c
     JOIN documents d ON c.document_id = d.id
-    WHERE d.collection = $1${filterSql}
+    WHERE d.collection = $1
+      AND c.embedding IS NOT NULL
+      AND (c.embedding <=> $2::vector) <= $4${filterSql}
     ORDER BY c.embedding <=> $2::vector
     LIMIT $3`,
-    [col, JSON.stringify(vector), topK, ...filterParams]
+    [col, JSON.stringify(vector), topK, maxDistance, ...filterParams]
   );
 
   const results: QueryResultItem[] = result.rows.map((row: typeof result.rows[number]) => ({
@@ -118,6 +145,11 @@ export async function query(
       tier1Meta: row.tier1_meta,
       tier2Meta: row.tier2_meta,
       tier3Meta: row.tier3_meta,
+      docSummary: row.doc_summary,
+      docSummaryShort: row.doc_summary_short,
+      docSummaryMedium: row.doc_summary_medium,
+      docSummaryLong: row.doc_summary_long,
+      payloadChecksum: row.payload_checksum,
     },
   }));
 

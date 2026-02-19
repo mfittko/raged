@@ -6,10 +6,13 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 
 ---
 
+
 ## February 19, 2026
 
 ### Added
 
+- **Adaptive Query Responses** ([#101](https://github.com/mfittko/RAGed/pull/101)): Added adaptive `minScore` handling, document summary/checksum fields in query responses, and accompanying schema/server tests so similarity thresholds and metadata better match user intent.
+- **Download and Collection APIs** ([#101](https://github.com/mfittko/RAGed/pull/101)): Introduced download-first/fulltext-first query endpoints, collection listing, filename sanitization, and improved blob-store error handling to support safe document downloads and metadata retrieval.
 - **Full-text enrichment filters** ([#99](https://github.com/mfittko/RAGed/pull/99)): Added dual-mode filtering across enrichment stats, enqueue, and queue clearing so operators can target text, sources, types, and summaries with PostgreSQL websearch queries and ILIKE fallbacks.
 - **Enrichment queue clearing** ([#99](https://github.com/mfittko/RAGed/pull/99)): Introduced clearEnrichmentQueue to wipe pending, processing, and dead tasks (with optional filters) for quicker queue resets during operational work.
 - **Structured error metadata** ([#99](https://github.com/mfittko/RAGed/pull/99)): failure handling now records rich error metadata per chunk and surface errors via getEnrichmentStatus, improving diagnostics and retry visibility.
@@ -17,8 +20,6 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 ### Changed
 
 - **Document-level summaries** ([#99](https://github.com/mfittko/RAGed/pull/99)): Moved summary_short/medium/long from chunk metadata to the documents table with fallback helpers, ensuring summaries persist at the document level while keeping chunk metadata clean.
-
-
 
 ## February 17, 2026
 
