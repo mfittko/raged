@@ -97,7 +97,9 @@ docs/         → Project documentation
 ## Agent Command Execution Policy
 
 - Run commands step by step when possible; avoid batching many command calls at once.
-- If complex logic is required, create or edit a script file in `tmp/` (create the folder if needed), then execute that script with explicit parameters.
+- Prefer direct terminal commands and built-in tools for one-off tasks. Do not wrap simple command sequences in helper scripts.
+- Do not create Python wrapper scripts for PR/review/reply automation unless the user explicitly requests a Python script.
+- If complex logic is required and cannot be expressed clearly with direct commands, create or edit a script file in `tmp/` (create the folder if needed), then execute that script with explicit parameters.
 - Be overly cautious with destructive commands (for example: `rm`, `git reset`, `git clean`, force pushes, schema/data deletion).
 	- Before running a destructive command, ask for explicit user confirmation.
 	- Explain expected effects and impacted files/resources before execution.
