@@ -50,6 +50,31 @@ export interface QueryResult {
   graph?: GraphData;
 }
 
+function countQueryTerms(value: string): number {
+  return value
+    .trim()
+    .split(/\s+/)
+    .filter(term => term.length > 0).length;
+}
+
+function getAutoMinScore(queryText: string): number {
+  const termCount = countQueryTerms(queryText);
+
+  if (termCount <= 1) {
+    return 0.3;
+  }
+
+  if (termCount === 2) {
+    return 0.4;
+  }
+
+  if (termCount <= 4) {
+    return 0.5;
+  }
+
+  return 0.6;
+}
+
 /**
  * Query documents using pgvector similarity search
  */

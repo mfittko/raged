@@ -241,6 +241,7 @@ curl -s -X POST http://localhost:8080/ingest \
 | `too_large` | Response body exceeds 10MB limit | Content is too large for ingestion |
 | `redirect_limit` | Too many redirects (>5) | Check URL for redirect loops |
 | `unsupported_content_type: <type>` | Content type not supported for extraction | Only HTML, PDF, text, markdown, JSON are supported |
+| `no_extractable_text: <type>` | Content type is supported, but extraction produced no usable text | Verify the page has readable body content (not empty shell / script-only / blocked content) |
 
 **Test URL accessibility manually:**
 ```bash

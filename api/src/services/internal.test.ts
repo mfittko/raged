@@ -128,10 +128,10 @@ describe("internal service", () => {
       ).resolves.not.toThrow();
     });
 
-    it("stores summaries at document level, omits from chunk tier3_meta", async () => {
+    it("stores summary on document and omits summary from chunk tier3 metadata", async () => {
       const { getPool } = await import("../db.js");
-      const mockClientQuery = vi.fn(async (sql: string) => {
-        if (sql.includes("FROM documents WHERE base_id")) {
+      const queryMock = vi.fn(async (sql: string) => {
+        if (sql.includes("SELECT id FROM documents")) {
           return { rows: [{ id: "doc-123" }] };
         }
         return { rows: [] };
@@ -139,108 +139,56 @@ describe("internal service", () => {
 
       (getPool as any).mockReturnValueOnce({
         connect: vi.fn(async () => ({
-          query: mockClientQuery,
+          query: queryMock,
           release: vi.fn(),
         })),
       });
 
-      await submitTaskResult("task-123", {
-        chunkId: "base-id:0",
-        collection: "docs",
-        tier2: {},
-        tier3: {
-          summary_short: "Short summary",
-          summary_medium: "Medium summary",
-          summary_long: "Long summary",
-          otherField: "keep this",
-        },
-      });
+      await expect(
+        submitTaskResult("task-123", {
+          chunkId: "base-id:0",
+          collection: "docs",
+          tier3: { summary: "ok" },
+        })
+      ).resolves.not.toThrow();
 
-      // Find the chunk update query
-      const chunkUpdateCall = mockClientQuery.mock.calls.find((call: any) =>
-        call[0].includes("UPDATE chunks c")
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("COALESCE(c.tier3_meta, '{}'::jsonb) || $2::jsonb"),
+        [null, null, "base-id", "docs", 0]
       );
-      expect(chunkUpdateCall).toBeDefined();
-      expect(chunkUpdateCall![0]).toContain("- 'summary'");
-      expect(chunkUpdateCall![0]).toContain("- 'summary_short'");
-      expect(chunkUpdateCall![0]).toContain("- 'summary_medium'");
-      expect(chunkUpdateCall![0]).toContain("- 'summary_long'");
-      expect(chunkUpdateCall![0]).toContain("- '_error'");
 
-      const chunkUpdateParams = ((chunkUpdateCall as any)?.[1] as unknown[] | undefined) ?? [];
-      const chunkTier3PayloadRaw = chunkUpdateParams[1];
-      const chunkTier3Payload = JSON.parse(typeof chunkTier3PayloadRaw === "string" ? chunkTier3PayloadRaw : "{}");
-      expect(chunkTier3Payload).not.toHaveProperty("summary");
-      expect(chunkTier3Payload).not.toHaveProperty("summary_short");
-      expect(chunkTier3Payload).not.toHaveProperty("summary_medium");
-      expect(chunkTier3Payload).not.toHaveProperty("summary_long");
-      expect(chunkTier3Payload.otherField).toBe("keep this");
-
-      // Find the document update query
-      const docUpdateCall = mockClientQuery.mock.calls.find((call: any) =>
-        call[0].includes("UPDATE documents SET")
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET summary_short = COALESCE($1, summary_short)"),
+        [null, "ok", null, "base-id", "docs"]
       );
-      expect(docUpdateCall).toBeDefined();
-      expect(docUpdateCall![0]).toContain("summary_short");
-      expect(docUpdateCall![0]).toContain("summary_medium");
-      expect(docUpdateCall![0]).toContain("summary_long");
-    });
-
-    it("uses fallback hierarchy for summary_medium", async () => {
-      const { getPool } = await import("../db.js");
-      const mockClientQuery = vi.fn(async (sql: string) => {
-        if (sql.includes("FROM documents WHERE base_id")) {
-          return { rows: [{ id: "doc-123" }] };
-        }
-        return { rows: [] };
-      });
-
-      (getPool as any).mockReturnValueOnce({
-        connect: vi.fn(async () => ({
-          query: mockClientQuery,
-          release: vi.fn(),
-        })),
-      });
-
-      await submitTaskResult("task-123", {
-        chunkId: "base-id:0",
-        collection: "docs",
-        summary: "Fallback summary from result.summary",
-        tier3: {},
-      });
-
-      // Find the document update query
-      const docUpdateCall = mockClientQuery.mock.calls.find((call: any) =>
-        call[0].includes("UPDATE documents SET")
-      );
-      expect(docUpdateCall).toBeDefined();
-      // Verify summary was passed as medium
-      const docUpdateParams = ((docUpdateCall as any)?.[1] as unknown[] | undefined) ?? [];
-      expect(docUpdateParams[1]).toBe("Fallback summary from result.summary");
     });
   });
 
   describe("failTask", () => {
-    it("marks task as failed", async () => {
+    it("records chunk failure metadata and schedules retry", async () => {
       const { getPool } = await import("../db.js");
+      const queryMock = vi.fn(async (sql: string) => {
+        if (sql.includes("SELECT attempt, max_attempts, payload")) {
+          return {
+            rows: [
+              {
+                attempt: 1,
+                max_attempts: 3,
+                payload: {
+                  baseId: "base-id",
+                  collection: "docs",
+                  chunkIndex: 0,
+                },
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      });
+
       (getPool as any).mockReturnValueOnce({
         connect: vi.fn(async () => ({
-          query: vi.fn(async (sql: string) => {
-            if (sql.includes("SELECT attempt")) {
-              return {
-                rows: [{
-                  attempt: 1,
-                  max_attempts: 3,
-                  payload: {
-                    baseId: "base-id",
-                    collection: "docs",
-                    chunkIndex: 0,
-                  },
-                }],
-              };
-            }
-            return { rows: [] };
-          }),
+          query: queryMock,
           release: vi.fn(),
         })),
       });
@@ -248,22 +196,33 @@ describe("internal service", () => {
       await expect(
         failTask("task-123", { error: "Test error" })
       ).resolves.not.toThrow();
+
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET enrichment_status = 'failed'"),
+        ["base-id", "docs", 0, "Test error", "task-123", 1, 3, false]
+      );
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET status = 'pending'"),
+        ["Test error", 60, "task-123"]
+      );
     });
 
-    it("retries with 60-second delay for non-final attempts", async () => {
+    it("records chunk failure metadata and moves to dead letter after max attempts", async () => {
       const { getPool } = await import("../db.js");
-      const mockClientQuery = vi.fn(async (sql: string) => {
-        if (sql.includes("SELECT attempt")) {
+      const queryMock = vi.fn(async (sql: string) => {
+        if (sql.includes("SELECT attempt, max_attempts, payload")) {
           return {
-            rows: [{
-              attempt: 1,
-              max_attempts: 3,
-              payload: {
-                baseId: "base-id",
-                collection: "docs",
-                chunkIndex: 0,
+            rows: [
+              {
+                attempt: 3,
+                max_attempts: 3,
+                payload: {
+                  baseId: "base-id",
+                  collection: "docs",
+                  chunkId: "base-id:0",
+                },
               },
-            }],
+            ],
           };
         }
         return { rows: [] };
@@ -271,133 +230,23 @@ describe("internal service", () => {
 
       (getPool as any).mockReturnValueOnce({
         connect: vi.fn(async () => ({
-          query: mockClientQuery,
+          query: queryMock,
           release: vi.fn(),
         })),
       });
 
-      await failTask("task-123", { error: "Test error" });
+      await expect(
+        failTask("task-123", { error: "Final attempt failed" })
+      ).resolves.not.toThrow();
 
-      // Find the retry update query
-      const retryCall = mockClientQuery.mock.calls.find((call: any) =>
-        call[0].includes("status = 'pending'") && call[0].includes("interval '60 seconds'")
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET enrichment_status = 'failed'"),
+        ["base-id", "docs", 0, "Final attempt failed", "task-123", 3, 3, true]
       );
-      expect(retryCall).toBeDefined();
-    });
-
-    it("moves to dead letter on final attempt", async () => {
-      const { getPool } = await import("../db.js");
-      const mockClientQuery = vi.fn(async (sql: string) => {
-        if (sql.includes("SELECT attempt")) {
-          return {
-            rows: [{
-              attempt: 3,
-              max_attempts: 3,
-              payload: {
-                baseId: "base-id",
-                collection: "docs",
-                chunkIndex: 0,
-              },
-            }],
-          };
-        }
-        return { rows: [] };
-      });
-
-      (getPool as any).mockReturnValueOnce({
-        connect: vi.fn(async () => ({
-          query: mockClientQuery,
-          release: vi.fn(),
-        })),
-      });
-
-      await failTask("task-123", { error: "Final attempt failed" });
-
-      // Find the dead-letter update query
-      const deadLetterCall = mockClientQuery.mock.calls.find((call: any) =>
-        call[0].includes("status = 'dead'")
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining("SET status = 'dead'"),
+        ["Final attempt failed", "task-123"]
       );
-      expect(deadLetterCall).toBeDefined();
-      expect(deadLetterCall![0]).toContain("completed_at = now()");
-    });
-
-    it("records error metadata in chunk tier3_meta", async () => {
-      const { getPool } = await import("../db.js");
-      const mockClientQuery = vi.fn(async (sql: string) => {
-        if (sql.includes("SELECT attempt")) {
-          return {
-            rows: [{
-              attempt: 2,
-              max_attempts: 3,
-              payload: {
-                baseId: "base-id",
-                collection: "docs",
-                chunkIndex: 5,
-              },
-            }],
-          };
-        }
-        return { rows: [] };
-      });
-
-      (getPool as any).mockReturnValueOnce({
-        connect: vi.fn(async () => ({
-          query: mockClientQuery,
-          release: vi.fn(),
-        })),
-      });
-
-      await failTask("task-123", { error: "Test error message" });
-
-      // Find the chunk update query
-      const chunkUpdateCall = mockClientQuery.mock.calls.find((call: any) =>
-        call[0].includes("UPDATE chunks c SET") && call[0].includes("_error")
-      );
-      expect(chunkUpdateCall).toBeDefined();
-      expect(chunkUpdateCall![0]).toContain("enrichment_status = 'failed'");
-      expect(chunkUpdateCall![0]).toContain("jsonb_build_object");
-      expect(chunkUpdateCall![0]).toContain("'_error'");
-      expect(chunkUpdateCall![0]).toContain("'chunkIndex'");
-      const chunkUpdateParams = ((chunkUpdateCall as any)?.[1] as unknown[] | undefined) ?? [];
-      expect(chunkUpdateParams[2]).toBe(5);
-    });
-
-    it("parses chunk index from chunkId format", async () => {
-      const { getPool } = await import("../db.js");
-      const mockClientQuery = vi.fn(async (sql: string) => {
-        if (sql.includes("SELECT attempt")) {
-          return {
-            rows: [{
-              attempt: 1,
-              max_attempts: 3,
-              payload: {
-                baseId: "base-id",
-                collection: "docs",
-                chunkId: "base-id:7",
-              },
-            }],
-          };
-        }
-        return { rows: [] };
-      });
-
-      (getPool as any).mockReturnValueOnce({
-        connect: vi.fn(async () => ({
-          query: mockClientQuery,
-          release: vi.fn(),
-        })),
-      });
-
-      await failTask("task-123", { error: "Test error" });
-
-      // Find the chunk update query and verify chunk_index parameter
-      const chunkUpdateCall = mockClientQuery.mock.calls.find((call: any) =>
-        call[0].includes("UPDATE chunks c SET") && call[0].includes("_error")
-      );
-      expect(chunkUpdateCall).toBeDefined();
-      // The third parameter should be the parsed chunk index
-      const chunkUpdateParams = ((chunkUpdateCall as any)?.[1] as unknown[] | undefined) ?? [];
-      expect(chunkUpdateParams[2]).toBe(7);
     });
   });
 

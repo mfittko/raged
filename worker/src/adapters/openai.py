@@ -2,9 +2,17 @@
 
 import json
 import logging
+import re
 
 from src.adapters.base import ExtractorAdapter, ImageDescription
-from src.config import EXTRACTOR_MODEL_CAPABLE, EXTRACTOR_MODEL_FAST, OPENAI_API_KEY
+from src.config import (
+    EXTRACTOR_MAX_OUTPUT_TOKENS,
+    EXTRACTOR_MODEL_CAPABLE,
+    EXTRACTOR_MODEL_FAST,
+    EXTRACTOR_MODEL_VISION,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -12,16 +20,19 @@ logger = logging.getLogger(__name__)
 class OpenAIAdapter(ExtractorAdapter):
     """OpenAI GPT-based LLM extraction adapter."""
 
-    def __init__(self):
-        if not OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY environment variable is required")
-
+    def __init__(self, base_url: str | None = None, api_key: str | None = None):
         from openai import AsyncOpenAI
 
-        self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        resolved_base_url = base_url or OPENAI_BASE_URL
+        resolved_api_key = api_key if api_key is not None else OPENAI_API_KEY
+        if not resolved_api_key:
+            resolved_api_key = "not-required"
+
+        self.client = AsyncOpenAI(api_key=resolved_api_key, base_url=resolved_base_url)
         self.fast_model = EXTRACTOR_MODEL_FAST
         self.capable_model = EXTRACTOR_MODEL_CAPABLE
-        self.max_tokens = 4096
+        self.vision_model = EXTRACTOR_MODEL_VISION
+        self.max_tokens = EXTRACTOR_MAX_OUTPUT_TOKENS
 
     async def extract_metadata(
         self, text: str, doc_type: str, schema: dict, prompt_template: str = ""
@@ -109,7 +120,7 @@ Respond in JSON format."""
 
         try:
             response = await self.client.chat.completions.create(
-                model=self.capable_model,
+                model=self.vision_model,
                 messages=[
                     {
                         "role": "user",
@@ -126,7 +137,8 @@ Respond in JSON format."""
                 response_format={"type": "json_object"},
             )
 
-            result = json.loads(response.choices[0].message.content)
+            content = response.choices[0].message.content or "{}"
+            result = json.loads(content)
             return ImageDescription(**result)
 
         except Exception as e:
@@ -150,9 +162,9 @@ Respond in JSON format."""
     async def _extract_structured(self, prompt: str, schema: dict, model: str) -> dict:
         """Extract structured data using OpenAI's JSON mode."""
         try:
-            response = await self.client.chat.completions.create(
-                model=model,
-                messages=[
+            base_kwargs = {
+                "model": model,
+                "messages": [
                     {
                         "role": "system",
                         "content": (
@@ -162,16 +174,72 @@ Respond in JSON format."""
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=self.max_tokens,
-                response_format={"type": "json_object"},
-            )
+                "max_tokens": self.max_tokens,
+            }
 
-            result = json.loads(response.choices[0].message.content)
-            return result
+            try:
+                response = await self.client.chat.completions.create(
+                    **base_kwargs,
+                    response_format={"type": "json_object"},
+                )
+            except Exception as json_mode_error:
+                logger.warning(
+                    "Structured extraction JSON mode failed for model %s: %s. Retrying without response_format.",
+                    model,
+                    json_mode_error,
+                )
+                response = await self.client.chat.completions.create(**base_kwargs)
+
+            content = response.choices[0].message.content or "{}"
+            parsed = self._parse_json_content(content)
+            if parsed is None:
+                raise ValueError("Could not parse JSON object from model response")
+            return parsed
 
         except Exception as e:
             logger.error(f"Error in structured extraction: {e}")
             return self._empty_response_for_schema(schema)
+
+    def _parse_json_content(self, content: str) -> dict | None:
+        """Parse JSON object from raw model content, including fenced blocks."""
+        if not isinstance(content, str):
+            return None
+
+        stripped = content.strip()
+        if not stripped:
+            return None
+
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+        fenced_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", stripped, re.DOTALL)
+        if fenced_match:
+            candidate = fenced_match.group(1)
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+
+        candidate = stripped[start : end + 1]
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            return None
+
+        return None
 
     def _empty_response_for_schema(self, schema: dict) -> dict:
         """Generate an empty response matching the schema structure."""

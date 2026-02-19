@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 
 interface BlobStoreConfig {
@@ -148,13 +149,22 @@ export async function uploadRawBlob(input: RawUploadInput): Promise<RawUploadRes
   };
 }
 
-export async function downloadRawBlobStream(key: string): Promise<RawBlobDownloadResult> {
+export async function downloadRawBlob(key: string): Promise<Buffer> {
   const config = getBlobStoreConfig();
   if (!config) {
     throw new Error("blob store is not configured");
   }
 
-  const client = getS3Client(config);
+  const client = new S3Client({
+    endpoint: config.endpoint,
+    region: config.region,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+    },
+  });
+
   const response = await client.send(
     new GetObjectCommand({
       Bucket: config.bucket,
@@ -164,36 +174,22 @@ export async function downloadRawBlobStream(key: string): Promise<RawBlobDownloa
 
   const body = response.Body;
   if (!body) {
-    throw new Error(`Empty response body for key: ${key}`);
+    throw new Error(`blob not found: ${key}`);
   }
 
-  // Strategy 1: Readable stream (Node.js runtime)
+  const withByteArray = body as { transformToByteArray?: () => Promise<Uint8Array> };
+  if (typeof withByteArray.transformToByteArray === "function") {
+    const bytes = await withByteArray.transformToByteArray();
+    return Buffer.from(bytes);
+  }
+
   if (body instanceof Readable) {
-    return {
-      stream: body,
-      contentLength: typeof response.ContentLength === "number" ? response.ContentLength : null,
-      contentType: response.ContentType ?? null,
-    };
+    const chunks: Buffer[] = [];
+    for await (const chunk of body) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   }
 
-  // Strategy 2: Web stream (edge/browser runtime)
-  if (typeof (body as { transformToWebStream?: unknown }).transformToWebStream === "function") {
-    const webStream = (body as { transformToWebStream: () => unknown }).transformToWebStream() as WebReadableStream;
-    return {
-      stream: Readable.fromWeb(webStream),
-      contentLength: typeof response.ContentLength === "number" ? response.ContentLength : null,
-      contentType: response.ContentType ?? null,
-    };
-  }
-
-  throw new Error("Unsupported response body type from blob store");
-}
-
-export async function downloadRawBlob(key: string): Promise<Buffer> {
-  const { stream } = await downloadRawBlobStream(key);
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
-  }
-  return Buffer.concat(chunks);
+  throw new Error(`unsupported blob body type for key: ${key}`);
 }

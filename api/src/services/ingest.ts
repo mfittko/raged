@@ -79,95 +79,27 @@ function stripNullBytes(value: string): string {
   return value.replace(/\u0000/g, "");
 }
 
-const MAX_METADATA_NESTING_DEPTH = 64;
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && Object.getPrototypeOf(value) === Object.prototype;
-}
-
-function sanitizeLeafValue(value: unknown): unknown {
+function sanitizeJsonValue(value: unknown): unknown {
   if (typeof value === "string") {
     return stripNullBytes(value);
   }
 
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeJsonValue(entry));
+  }
+
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    const record = value as Record<string, unknown>;
+    const sanitized: Record<string, unknown> = {};
+
+    for (const [key, entry] of Object.entries(record)) {
+      sanitized[key] = sanitizeJsonValue(entry);
+    }
+
+    return sanitized;
+  }
+
   return value;
-}
-
-function sanitizeJsonValue(value: unknown): unknown {
-  if (!Array.isArray(value) && !isPlainObject(value)) {
-    return sanitizeLeafValue(value);
-  }
-
-  const seen = new WeakSet<object>();
-  const rootTarget: unknown = Array.isArray(value) ? [] : {};
-  const stack: Array<{
-    source: unknown[] | Record<string, unknown>;
-    target: unknown[] | Record<string, unknown>;
-    depth: number;
-  }> = [
-    {
-      source: value,
-      target: rootTarget as unknown[] | Record<string, unknown>,
-      depth: 0,
-    },
-  ];
-
-  while (stack.length > 0) {
-    const frame = stack.pop()!;
-
-    if (frame.depth > MAX_METADATA_NESTING_DEPTH) {
-      throw new Error(`metadata exceeds maximum nesting depth of ${MAX_METADATA_NESTING_DEPTH}`);
-    }
-
-    if (seen.has(frame.source as object)) {
-      throw new Error("metadata contains circular references");
-    }
-    seen.add(frame.source as object);
-
-    if (Array.isArray(frame.source) && Array.isArray(frame.target)) {
-      for (const entry of frame.source) {
-        if (Array.isArray(entry)) {
-          const nextTarget: unknown[] = [];
-          frame.target.push(nextTarget);
-          stack.push({ source: entry, target: nextTarget, depth: frame.depth + 1 });
-          continue;
-        }
-
-        if (isPlainObject(entry)) {
-          const nextTarget: Record<string, unknown> = {};
-          frame.target.push(nextTarget);
-          stack.push({ source: entry, target: nextTarget, depth: frame.depth + 1 });
-          continue;
-        }
-
-        frame.target.push(sanitizeLeafValue(entry));
-      }
-
-      continue;
-    }
-
-    if (isPlainObject(frame.source) && isPlainObject(frame.target)) {
-      for (const [key, entry] of Object.entries(frame.source)) {
-        if (Array.isArray(entry)) {
-          const nextTarget: unknown[] = [];
-          frame.target[key] = nextTarget;
-          stack.push({ source: entry, target: nextTarget, depth: frame.depth + 1 });
-          continue;
-        }
-
-        if (isPlainObject(entry)) {
-          const nextTarget: Record<string, unknown> = {};
-          frame.target[key] = nextTarget;
-          stack.push({ source: entry, target: nextTarget, depth: frame.depth + 1 });
-          continue;
-        }
-
-        frame.target[key] = sanitizeLeafValue(entry);
-      }
-    }
-  }
-
-  return rootTarget;
 }
 
 function sanitizeMetadataRecord(value: Record<string, unknown>): Record<string, unknown> {
@@ -427,26 +359,10 @@ export async function ingest(
     const source = stripNullBytes(item.source);
     const itemUrl = item.url ? stripNullBytes(item.url) : undefined;
     const docType = detectDocType(item);
-
-    // Sanitize metadata with error handling for malformed data
-    let tier1Meta: Record<string, unknown>;
-    let metadata: Record<string, unknown>;
-
-    try {
-      tier1Meta = sanitizeMetadataRecord(extractTier1(item, docType));
-      metadata = sanitizeMetadataRecord({
-        ...(item.metadata ?? {}),
-      });
-    } catch (error) {
-      // Handle sanitization failures per item (depth/cycle errors)
-      const errorMessage = error instanceof Error ? error.message : "metadata sanitization failed";
-      fetchErrors.push({
-        url: item.url || item.source || "(unknown)",
-        status: null,
-        reason: `invalid_metadata: ${errorMessage}`,
-      });
-      continue;
-    }
+    const tier1Meta = sanitizeMetadataRecord(extractTier1(item, docType));
+    const metadata = sanitizeMetadataRecord({
+      ...(item.metadata ?? {}),
+    });
     
     // Copy filter-relevant fields from metadata to tier1Meta
     // Use explicit undefined checks to preserve falsy but valid values (empty strings, 0, etc.)

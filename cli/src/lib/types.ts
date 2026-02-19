@@ -13,6 +13,7 @@ export interface QueryResult {
   text?: string;
   score: number;
   source: string;
+  payload?: Record<string, unknown>;
 }
 
 export interface IngestResponse {
@@ -53,4 +54,12 @@ export interface GraphEntityResponse {
   documents?: Array<{
     id: string;
   }>;
+}
+
+export interface CollectionStats {
+  collection: string;
+  documentCount: number;
+  chunkCount: number;
+  enrichedChunkCount: number;
+  lastSeenAt: string | null;
 }

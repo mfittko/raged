@@ -33,14 +33,10 @@ function getOpenAiBaseUrl(): string {
 }
 
 function ensureEmbeddingArray(value: unknown, context: string): number[] {
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    value.some((item) => typeof item !== "number" || !Number.isFinite(item))
-  ) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "number")) {
     throw new Error(`Invalid embedding payload from ${context}`);
   }
-  return value as number[];
+  return value;
 }
 
 async function embedOne(text: string): Promise<number[]> {

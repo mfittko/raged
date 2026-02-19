@@ -44,7 +44,17 @@ export function validateConfig(): string[] {
 
   if (embedProvider !== "ollama" && embedProvider !== "openai") {
     errors.push("EMBED_PROVIDER must be either 'ollama' or 'openai'");
-    return errors;
+  }
+
+  if (embedProvider === "openai") {
+    if (!process.env.OPENAI_API_KEY) {
+      errors.push("OPENAI_API_KEY is required when EMBED_PROVIDER=openai");
+    }
+  } else {
+    // OLLAMA_URL is required for ollama embedding generation
+    if (!process.env.OLLAMA_URL) {
+      errors.push("OLLAMA_URL is required for embedding generation (e.g., http://localhost:11434)");
+    }
   }
 
   if (embedProvider === "openai") {

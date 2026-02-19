@@ -7,5 +7,5 @@
   },
   "repository": "https://github.com/mfittko/raged",
   "license": "MIT",
-  "keywords": ["rag", "semantic-search", "knowledge-base", "embeddings", "qdrant"]
+  "keywords": ["rag", "semantic-search", "knowledge-base", "embeddings", "pgvector", "openai", "anthropic"]
 }

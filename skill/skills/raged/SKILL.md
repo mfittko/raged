@@ -1,19 +1,17 @@
 ---
 name: raged
 description: >
-  Store and retrieve knowledge using raged semantic search with enrichment and knowledge graph.
-  Ingest any content — code, docs, PDFs, images, articles, emails, transcripts, notes — and query
-  by natural language. Supports async metadata extraction, entity/relationship tracking, and hybrid
-  vector+graph retrieval. Use when the user needs grounded context from their knowledge base.
+  CLI-first workflow for raged semantic search, ingestion, enrichment, and graph lookup.
+  Use the `raged` command as the default interface for grounded context retrieval.
+  Supports code/docs/media ingestion, async metadata extraction, and graph-aware retrieval.
 version: 1.0.0
-compatibility: Requires curl and a running raged instance (Docker Compose or Kubernetes)
+compatibility: Requires raged CLI and a running raged instance (Docker Compose or Kubernetes)
 metadata:
   openclaw:
     emoji: "magnifying_glass"
     requires:
       bins:
-        - curl
-        - jq
+        - raged
       env:
         - RAGED_URL
     primaryEnv: RAGED_URL
@@ -23,428 +21,269 @@ metadata:
         secret: true
 ---
 
-# raged — Semantic Knowledge Base with Enrichment & Graph
+# raged — CLI-First Semantic Knowledge Base
 
-Store any content and retrieve it via natural-language queries, enriched with metadata extraction and knowledge graph relationships.
+Use `raged` as the primary interface for indexing, querying, enrichment control, and graph exploration.
 
-raged chunks text, embeds it with a local model (Ollama + nomic-embed-text), stores vectors in Qdrant, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds a Neo4j knowledge graph for entity-aware retrieval.
-
-Content types: source code, markdown docs, blog articles, email threads, PDFs, images, YouTube transcripts, meeting notes, Slack exports, or any text.
+raged ingests content, chunks text, embeds vectors in Postgres + pgvector, and supports async enrichment and graph-aware retrieval.
 
 ## Environment
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `RAGED_URL` | Base URL of the raged API | `http://localhost:8080` |
-| `RAGED_TOKEN` | Bearer token (omit if auth is disabled) | `my-secret-token` |
+| `RAGED_URL` | Base URL of the raged API used by the CLI | `http://localhost:39180` |
+| `RAGED_API_TOKEN` | Bearer token used by the CLI when auth is enabled | `my-secret-token` |
 
-## Pre-flight: Check Connection
+## Pre-flight (CLI-first)
 
-Before running queries or indexing, verify raged is reachable:
-
-```bash
-curl -sf "$RAGED_URL/healthz" | jq .
-# Expected: {"ok":true}
-```
-
-Or use the bundled checker script:
+If needed, start the stack:
 
 ```bash
-node scripts/check-connection.mjs "$RAGED_URL"
+docker compose up -d --build
 ```
 
-If the health check fails, remind the user to start the stack:
+Verify API is reachable:
 
 ```bash
-docker compose up -d   # base stack (Qdrant, Ollama, API)
-docker compose --profile enrichment up -d   # full stack with Redis, Neo4j, worker
+curl -sf "$RAGED_URL/healthz"
 ```
 
-## Querying the Knowledge Base
+## Query (Primary Workflow)
 
-### Basic Query
+Start with collection discovery when scope is unknown:
 
 ```bash
-curl -s -X POST "$RAGED_URL/query" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d '{
-    "query": "authentication middleware",
-    "topK": 5
-  }' | jq '.results[] | {score, source, text: (.text | .[0:200])}'
+raged collections
 ```
 
-Omit the `Authorization` header if raged has no token configured.
-
-Works for any content type — code, docs, articles, transcripts:
+Use the default query pattern first, then add only the flags you need:
 
 ```bash
-# Find relevant meeting notes
-curl -s -X POST "$RAGED_URL/query" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "Q1 roadmap decisions", "topK": 5}' | jq '.results[]'
-
-# Search indexed blog articles
-curl -s -X POST "$RAGED_URL/query" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "React server components best practices", "topK": 5}' | jq '.results[]'
+raged query "<your query>" --collection docs --topK 5
 ```
 
-### Query with Filters
-
-Filter by source collection (e.g., a specific repo or content set):
+Common examples:
 
 ```bash
-curl -s -X POST "$RAGED_URL/query" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d '{
-    "query": "error handling",
-    "topK": 5,
-    "filter": {
-      "must": [
-        {"key": "repoId", "match": {"value": "my-repo"}}
-      ]
-    }
-  }' | jq '.results[] | {score, source, text: (.text | .[0:200])}'
+raged query "authentication middleware" --collection docs --topK 5
+raged query "invoice INV89909018" --collection downloads-pdf --summary short --keywords --topK 8
+raged query "route handler" --collection docs --repoId my-repo --pathPrefix src/api/ --lang ts
+raged query "invoice INV89909018" --collections downloads-pdf,docs --topK 8
+raged query "invoice INV89909018" --allCollections --topK 8
+raged query "invoice INV89909018" --collections downloads-pdf,docs --topK 20 --unique
+raged query "invoice INV89909018" --collection downloads-pdf --download
+raged query "invoice INV89909018" --collection downloads-pdf --open
 ```
 
-Filter by content type (when metadata includes `lang`):
+### Query flag guide
+
+- `--collection <name>`: fastest and least noisy when source is known.
+- `--collections a,b`: use when content likely spans a small known set.
+- `--allCollections`: use only for discovery, then rerun with narrower scope.
+- `--topK`: `5-10` for Q&A, `20-50` for audits/extraction, `100` for broad inventory pulls.
+- `--summary short`: compact extraction (dates, amounts, entities).
+- `--summary long`: richer extracted context when short summaries are insufficient.
+- `--full --stdout`: fallback for full extracted document text in terminal when summaries are unhelpful.
+- `--keywords`: readability aid only; does not improve ranking.
+- `--repoId`, `--pathPrefix`, `--lang`: tighten code/repo lookups.
+- `--unique`: deduplicates multi-collection hits by payload checksum.
+
+Fallback pattern when summary output is weak:
 
 ```bash
-curl -s -X POST "$RAGED_URL/query" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d '{
-    "query": "database connection",
-    "topK": 5,
-    "filter": {
-      "must": [
-        {"key": "lang", "match": {"value": "ts"}}
-      ]
-    }
-  }' | jq '.results[] | {score, source, text: (.text | .[0:200])}'
+raged query "<your query>" --collection downloads-pdf --topK 1 --summary long
+raged query "<your query>" --collection downloads-pdf --topK 1 --full --stdout
 ```
 
-Filter by path prefix:
+Use this especially for invoices/receipts where key fields (IBAN, totals, reference IDs) may not appear in summary output.
+
+### Scoring defaults
+
+- Default is `--minScore auto`; keep it unset initially.
+- Auto thresholds by query term count:
+  - 1 term: `0.3`
+  - 2 terms: `0.4`
+  - 3-4 terms: `0.5`
+  - 5+ terms: `0.6`
+- Lower (`0.2-0.4`) only when recall is too low.
+- Raise (`0.55+`) when results stay noisy after narrowing scope.
+- Avoid `--minScore 0` outside diagnostics.
+
+### Calibration pattern (when needed)
+
+Probe first, then scale:
 
 ```bash
-curl -s -X POST "$RAGED_URL/query" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d '{
-    "query": "route handler",
-    "topK": 5,
-    "filter": {
-      "must": [
-        {"key": "path", "match": {"text": "src/api/"}}
-      ]
-    }
-  }' | jq '.results[] | {score, source, text: (.text | .[0:200])}'
+raged query "<your query>" --collection docs --topK 1
 ```
 
-Combine multiple filters (AND logic) by adding entries to the `must` array.
+Take score `s`, then optionally rerun with `--minScore (s - 0.05)` and higher `--topK`.
 
-### Query Parameters
+Suggested sequence:
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `query` | string | **required** | Natural-language search text |
-| `topK` | number | `8` | Number of results to return |
-| `collection` | string | `docs` | Qdrant collection to search |
-| `filter` | object | _(none)_ | Qdrant filter with `must` array |
-| `graphExpand` | boolean | `false` | Enable graph-based entity expansion (requires Neo4j) |
+1. `raged collections`
+2. Query narrow scope (`--collection` or `--collections`)
+3. Keep `--minScore` unset (`auto`)
+4. Add `--summary short` for extraction
+5. Add `--keywords` only for scanability
+6. Expand `--topK` last
 
-### Query with Graph Expansion
+### Canonical pattern: monetary totals in a period
 
-When Neo4j is enabled, queries can expand results to include related entities from the knowledge graph:
+Use this for questions like “How much did we pay vendor X in year Y?”
+
+**Hard rule:** if matched context is manageable, do not use Python/scripts. Extract and sum directly from retrieved results.
+
+Principles:
+
+- Keep `--minScore` unset (`auto`) by default.
+- Keep `--topK <= 100`.
+- Prefer `--collection`/`--collections` over `--allCollections`.
+- Use precise terms: payer/org, vendor, `invoice`, and period.
+
+Recommended retrieval:
 
 ```bash
-curl -s -X POST "$RAGED_URL/query" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d '{
-    "query": "authentication flow",
-    "topK": 5,
-    "graphExpand": true
-  }' | jq .
+raged query "<payer> <vendor> invoice <year>" \
+  --collections <billing-collection>,docs \
+  --topK 100 \
+  --summary short
 ```
 
-Response includes both vector results and extracted/expanded entities:
+Aggregation hygiene (outside retrieval):
 
-```json
-{
-  "ok": true,
-  "results": [ /* vector search results */ ],
-  "graph": {
-    "entities": [
-      { "name": "AuthService", "type": "class" },
-      { "name": "JWT", "type": "library" }
-    ],
-    "relationships": []
-  }
-}
-```
+- Primary strategy (mandatory): if the matched invoice set is manageable and clearly readable, do not use Python/scripts; perform the total manually from the retrieved output.
+- Use Python/script parsing only as a fallback when manual arithmetic is impractical (large/ambiguous result sets) or when reproducibility is explicitly required.
+- Require a double-check before finalizing any reported total (recompute once independently, then compare).
+- De-duplicate by stable invoice identifier/source path before summing.
+- Sum only entries in the requested period.
+- Keep currency explicit in the final answer and avoid mixing currencies in one total.
+- If confidence is low, report matched invoice count and note potential missing records.
 
-### Filter Keys
+## Ingest (CLI-first)
 
-| Key | Match Type | Example |
-|-----|-----------|---------|
-| `repoId` | exact value | `{"key":"repoId","match":{"value":"my-repo"}}` |
-| `lang` | exact value | `{"key":"lang","match":{"value":"ts"}}` |
-| `path` | text prefix | `{"key":"path","match":{"text":"src/"}}` |
-
-### Response Shape
-
-```json
-{
-  "ok": true,
-  "results": [
-    {
-      "id": "my-repo:src/auth.ts:0",
-      "score": 0.87,
-      "source": "https://github.com/org/repo#src/auth.ts",
-      "text": "chunk content...",
-      "payload": { "repoId": "...", "lang": "ts", "path": "src/auth.ts" }
-    }
-  ]
-}
-```
-
-Results are ordered by similarity score (highest first). `score` ranges 0.0–1.0.
-
-## Ingesting Content
-
-Ingest any text into the knowledge base. raged chunks it, embeds each chunk, and stores vectors in Qdrant.
-
-### Via the API (any text content)
-
-Send any text directly to the `/ingest` endpoint:
+Index a Git repository:
 
 ```bash
-# Ingest a local file (doc, article, transcript, code, etc.)
-text=$(jq -Rs . < notes/2026-02-14-standup.md)
-
-curl -s -X POST "$RAGED_URL/ingest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d "{\"collection\":\"docs\",\"items\":[{\"id\":\"meeting-notes:2026-02-14\",\"text\":${text},\"source\":\"notes/2026-02-14-standup.md\",\"metadata\":{\"type\":\"meeting-notes\",\"date\":\"2026-02-14\"}}]}" | jq .
+raged index --repo https://github.com/org/repo.git --collection docs
 ```
 
-```bash
-# Ingest a source file
-text=$(jq -Rs . < src/main.ts)
+Ingest local files/directories:
 
-curl -s -X POST "$RAGED_URL/ingest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d "{\"collection\":\"docs\",\"items\":[{\"id\":\"my-repo:src/main.ts\",\"text\":${text},\"source\":\"https://github.com/org/repo#src/main.ts\",\"metadata\":{\"repoId\":\"my-repo\",\"path\":\"src/main.ts\",\"lang\":\"ts\"}}]}" | jq .
+```bash
+raged ingest --file path/to/document.pdf --collection docs
+raged ingest --dir path/to/content --collection docs
 ```
 
-Response: `{"ok": true, "upserted": <chunk_count>}`
+Directory ingest metadata behavior:
 
-You can ingest multiple items in a single request. Use any metadata keys that help with filtering later.
+- `metadata.rootDir`: normalized absolute root directory passed via `--dir`.
+- `metadata.relativePath`: path of each ingested file relative to `rootDir`.
+- `metadata.path`: same relative value as `relativePath` for path-compatible retrieval/filtering.
 
-### Via the CLI (bulk Git repository indexing)
+`--doc-type` behavior with `--dir`:
 
-For indexing entire Git repositories, the CLI automates cloning, scanning, batching, and filtering. From the raged repo:
+- Candidate files are filtered first by detected type.
+- Matching files are then ingested with the provided doc type forced.
+
+Example:
 
 ```bash
-cd cli && npm install && npm run build
+raged ingest --dir ~/Downloads/invoices --doc-type pdf --collection downloads-pdf
+```
 
-node dist/index.js index \
+This ingests only detected PDFs from the directory tree and preserves local-reference metadata (`rootDir` + relative path) for later source resolution.
+
+Skip noisy folders/files during directory ingest:
+
+```bash
+raged ingest --dir ~/Documents --doc-type pdf --ignore "tmp/**,**/*.bak" --collection downloads-pdf
+```
+
+Or keep ignore rules in a file:
+
+```bash
+raged ingest --dir ~/Documents --doc-type pdf --ignore-file ~/.config/raged/ingest.ignore --collection downloads-pdf
+```
+
+Tune request size for large ingests (helpful when API body limits are strict):
+
+```bash
+raged ingest --dir ~/Documents --doc-type pdf --batchSize 5 --collection downloads-pdf
+```
+
+Useful indexing controls:
+
+```bash
+raged index \
   --repo https://github.com/org/repo.git \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN" \
-  --collection docs
+  --collection docs \
+  --include src/ \
+  --exclude dist/ \
+  --maxFiles 4000 \
+  --maxBytes 500000
 ```
 
-### CLI Index Flags
+Indexing guidance:
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--repo`, `-r` | string | **required** | Git URL to clone |
-| `--api` | string | `http://localhost:8080` | raged API URL |
-| `--collection` | string | `docs` | Target Qdrant collection |
-| `--branch` | string | _(default)_ | Branch to clone |
-| `--repoId` | string | _(repo URL)_ | Stable identifier for the repo |
-| `--token` | string | _(from env)_ | Bearer token |
-| `--include` | string | _(all)_ | Only index files matching this prefix |
-| `--exclude` | string | _(none)_ | Skip files matching this prefix |
-| `--maxFiles` | number | `4000` | Max files to process |
-| `--maxBytes` | number | `500000` | Max file size in bytes |
-| `--enrich` | boolean | `true` | Enable async enrichment |
-| `--no-enrich` | flag | - | Disable async enrichment |
-| `--doc-type` | string | _(auto)_ | Override document type detection |
+- Use `index` for Git repositories and `ingest` for local files/directories.
+- Start with narrow collection targets (`docs`, `downloads-pdf`, etc.).
+- Use `--ignore`/`--ignore-file` early to avoid noisy content.
+- Reduce `--batchSize` when API body limits are strict.
 
-### Via the CLI (arbitrary file ingestion)
+## Enrichment (CLI-first)
 
-For ingesting PDFs, images, Slack exports, or other non-repo content:
+Check enrichment queue stats:
 
 ```bash
-# Ingest a single PDF
-node dist/index.js ingest \
-  --file path/to/document.pdf \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN" \
-  --collection docs
-
-# Ingest all files in a directory
-node dist/index.js ingest \
-  --dir path/to/content/ \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN" \
-  --collection docs
+raged enrich --stats
 ```
 
-Supported file types: text, code, PDFs (extracted text), images (base64 + EXIF metadata), Slack JSON exports.
+Stats output is scoped by the selected `--collection` and optional `--filter`.
 
-### Ingest Request Schema
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `collection` | string | no | Collection name (default: `docs`) |
-| `items` | array | **yes** | Array of items to ingest |
-| `items[].id` | string | no | Base ID for chunks (auto-generated if omitted) |
-| `items[].text` | string | **yes** | Full text to chunk and embed |
-| `items[].source` | string | **yes** | Source URL or identifier |
-| `items[].metadata` | object | no | Arbitrary metadata stored with chunks |
-| `items[].docType` | string | no | Document type (`code`, `text`, `pdf`, `image`, `slack`) |
-| `items[].enrich` | boolean | no | Enable async enrichment (default: `true`) |
-
-## Enrichment
-
-When enrichment is enabled (Redis + Neo4j + worker running), raged performs async metadata extraction:
-
-- **Tier-1** (sync): Heuristic/AST/EXIF extraction during ingest
-- **Tier-2** (async): spaCy NER, keyword extraction, language detection
-- **Tier-3** (async): LLM-based summaries and entity extraction
-
-### Check Enrichment Status
+Enqueue pending work:
 
 ```bash
-# Get status for a specific document
-curl -s "$RAGED_URL/enrichment/status/my-repo:src/auth.ts?collection=docs" \
-  -H "Authorization: Bearer $RAGED_TOKEN" | jq .
+raged enrich
 ```
 
-Response:
-```json
-{
-  "status": "enriched",
-  "chunks": { "total": 3, "enriched": 3, "pending": 0, "processing": 0, "failed": 0, "none": 0 },
-  "extractedAt": "2026-02-14T10:05:00Z",
-  "metadata": {
-    "tier2": { "entities": [...], "keywords": [...], "language": "en" },
-    "tier3": { "summary": "...", "entities": [...] }
-  }
-}
-```
-
-### Get Enrichment Stats
+Force re-enrichment (optionally filtered):
 
 ```bash
-# System-wide enrichment statistics
-curl -s "$RAGED_URL/enrichment/stats" \
-  -H "Authorization: Bearer $RAGED_TOKEN" | jq .
+raged enrich --force
+raged enrich --force --filter invoice
 ```
 
-Via CLI:
+Clear queued tasks (optionally filtered):
+
 ```bash
-node dist/index.js enrich --show-failed \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN"
+raged enrich --clear
+raged enrich --clear --filter invoice
 ```
 
-### Trigger Enrichment
+## Graph (CLI-first)
+
+Query an entity and inspect connected documents:
 
 ```bash
-# Enqueue pending items for enrichment
-curl -s -X POST "$RAGED_URL/enrichment/enqueue" \
+raged graph --entity "AuthService"
+```
+
+## Optional API fallback
+
+Use direct HTTP only when CLI does not cover a needed workflow:
+
+```bash
+curl -s -X POST "$RAGED_URL/query" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d '{"collection": "docs", "force": false}' | jq .
-
-# Force re-enrichment of all items
-curl -s -X POST "$RAGED_URL/enrichment/enqueue" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d '{"collection": "docs", "force": true}' | jq .
+  -d '{"query": "authentication middleware", "topK": 5}'
 ```
 
-Via CLI:
-```bash
-# Trigger enrichment for pending items
-node dist/index.js enrich \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN"
+## Troubleshooting
 
-# Force re-enrichment
-node dist/index.js enrich --force \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN"
-```
-
-## Knowledge Graph
-
-When Neo4j is enabled, raged builds a knowledge graph of entities and relationships extracted from documents.
-
-### Query Entity
-
-```bash
-# Get entity details, connections, and related documents
-curl -s "$RAGED_URL/graph/entity/AuthService" \
-  -H "Authorization: Bearer $RAGED_TOKEN" | jq .
-```
-
-Response:
-```json
-{
-  "entity": {
-    "name": "AuthService",
-    "type": "class",
-    "description": "Handles user authentication"
-  },
-  "connections": [
-    { "entity": "JWT", "relationship": "uses", "direction": "outgoing" },
-    { "entity": "UserService", "relationship": "relates_to", "direction": "incoming" }
-  ],
-  "documents": [
-    { "id": "my-repo:src/auth.ts:0" },
-    { "id": "my-repo:src/auth.ts:1" }
-  ]
-}
-```
-
-Via CLI:
-```bash
-node dist/index.js graph --entity "AuthService" \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN"
-```
-
-Output:
-```
-=== Entity: AuthService ===
-Type: class
-Description: Handles user authentication
-
-=== Connections (2) ===
-  → JWT (uses)
-  ← UserService (relates_to)
-
-=== Related Documents (3) ===
-  - my-repo:src/auth.ts:0
-  - my-repo:src/auth.ts:1
-  - my-repo:docs/auth.md:0
-```
-
-## Error Handling
-
-| HTTP Status | Meaning | Action |
-|-------------|---------|--------|
-| `200` | Success | Parse JSON response |
-| `401` | Unauthorized | Check `RAGED_TOKEN` is set correctly |
-| `400` | Bad request | Check required fields (`query` for /query, `items` for /ingest) |
-| `5xx` | Server error | Check raged logs: `docker compose logs api` |
-| Connection refused | Stack not running | Start with `docker compose up -d` |
+| Symptom | Action |
+|---------|--------|
+| Connection refused | `docker compose up -d --build` |
+| Unauthorized | Set `RAGED_API_TOKEN` or pass `--token` |
+| No results | Lower threshold (`--minScore 0.2`) or increase `--topK` |
+| Enrichment not progressing | Ensure enrichment worker is running (`docker compose ps`) |

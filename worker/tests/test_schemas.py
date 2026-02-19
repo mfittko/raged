@@ -103,12 +103,38 @@ def test_pdf_schema():
         "summary": "Technical specification",
         "key_entities": ["API", "Database"],
         "sections": [{"title": "Introduction", "summary": "Overview of the system"}],
+        "invoice": {
+            "is_invoice": True,
+            "sender": "Packt Publishing Ltd",
+            "receiver": "Manuel Fittko",
+            "invoice_identifier": None,
+            "invoice_number": "INV-2026-001",
+            "currency": "EUR",
+            "subtotal": "100.00",
+            "vat_amount": "19.00",
+            "total_amount": "119.00",
+            "line_items": [
+                {
+                    "description": "Book subscription",
+                    "quantity": "1",
+                    "unit_price": "100.00",
+                    "amount": "100.00",
+                    "vat_rate": "19%",
+                }
+            ],
+        },
     }
     metadata = PDFMetadata(**data)
 
     assert metadata.summary == "Technical specification"
     assert len(metadata.key_entities) == 2
     assert len(metadata.sections) == 1
+    assert metadata.invoice.is_invoice is True
+    assert metadata.invoice.sender == "Packt Publishing Ltd"
+    assert metadata.invoice.receiver == "Manuel Fittko"
+    assert metadata.invoice.invoice_identifier is None
+    assert metadata.invoice.total_amount == "119.00"
+    assert len(metadata.invoice.line_items) == 1
 
 
 def test_article_schema():

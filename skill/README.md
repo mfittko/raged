@@ -29,7 +29,7 @@ Add to `~/.openclaw/openclaw.json`:
       "raged": {
         "enabled": true,
         "env": {
-          "RAGED_URL": "http://localhost:8080",
+          "RAGED_URL": "http://localhost:39180",
           "RAGED_TOKEN": ""
         }
       }
@@ -42,9 +42,11 @@ Set `RAGED_TOKEN` only if your raged instance has `RAGED_API_TOKEN` configured.
 
 ## Prerequisites
 
-1. A running raged instance: `docker compose up -d` (from the raged repo)
+1. A running raged instance (example with custom ports): `POSTGRES_HOST_PORT=26532 API_HOST_PORT=39180 docker compose up -d postgres api` (from the raged repo)
 2. `curl` on PATH
-3. The Ollama embedding model pulled: `curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'`
+3. Embedding provider configured for your API:
+  - OpenAI: set `OPENAI_API_KEY`
+  - Local OpenAI-compatible endpoint (e.g., Ollama): set `OPENAI_BASE_URL` and `OPENAI_API_KEY` (any non-empty value for local endpoints)
 
 ## Verify
 

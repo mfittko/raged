@@ -24,6 +24,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    profiles: ["ollama"]
 
   seaweedfs:
     image: chrislusf/seaweedfs:3.80
@@ -40,19 +41,20 @@ services:
   enrichment-worker:
     build: ./worker
     environment:
-      API_URL: "http://api:8080"
+      API_URL: "${API_URL:-http://api:8080}"
       API_TOKEN: "${RAGED_API_TOKEN:-}"
       OLLAMA_URL: "http://ollama:11434"
-      EXTRACTOR_PROVIDER: "ollama"
-      EXTRACTOR_MODEL_FAST: "llama3"
-      EXTRACTOR_MODEL_CAPABLE: "llama3"
-      EXTRACTOR_MODEL_VISION: "llava"
-      WORKER_CONCURRENCY: "4"
+      EXTRACTOR_PROVIDER: "openai"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      EXTRACTOR_MODEL_FAST: "gpt-4.1-mini"
+      EXTRACTOR_MODEL_CAPABLE: "gpt-4.1-mini"
+      EXTRACTOR_MODEL_VISION: "gpt-4.1-mini"
+      EXTRACTOR_MAX_OUTPUT_TOKENS: "${EXTRACTOR_MAX_OUTPUT_TOKENS:-16384}"
+      WORKER_CONCURRENCY: "8"
     depends_on:
       api:
         condition: service_started
-      ollama:
-        condition: service_healthy
     profiles: ["enrichment", "full"]
 
   api:
@@ -60,8 +62,12 @@ services:
       context: ./api
     environment:
       DATABASE_URL: "${COMPOSE_DATABASE_URL:-postgresql://raged:raged@postgres:5432/raged}"
+      EMBED_PROVIDER: "openai"
       OLLAMA_URL: "http://ollama:11434"
       EMBED_MODEL: "nomic-embed-text"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OPENAI_EMBEDDING_MODEL: "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"
       PORT: "8080"
       RAGED_API_TOKEN: ""  # set to enable auth
       ENRICHMENT_ENABLED: "${ENRICHMENT_ENABLED:-false}"
@@ -69,8 +75,6 @@ services:
     ports: ["${API_HOST_PORT:-8080}:8080"]
     depends_on:
       postgres:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
 
 volumes:

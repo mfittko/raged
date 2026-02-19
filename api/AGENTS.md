@@ -9,7 +9,7 @@ src/
   server.ts     → Fastify app setup, route registration, server start
   auth.ts       → Authentication hook (bearer token)
   chunking.ts   → Text chunking logic
-  ollama.ts     → Embedding client (Ollama HTTP API)
+  embeddings.ts → Embedding orchestration (provider selection)
   db.ts         → Postgres client and migrations
 ```
 
@@ -30,7 +30,7 @@ Every route must validate its input. Use Fastify's built-in JSON Schema validati
 ### Single Responsibility Per Module
 
 - `chunking.ts` — only text chunking. No embedding, no HTTP, no database.
-- `ollama.ts` — only embedding via Ollama. No chunking, no database.
+- `embeddings.ts` — only embedding orchestration. Provider-specific calls live in dedicated modules.
 - `db.ts` — only Postgres client and migrations. No embedding, no chunking.
 - `auth.ts` — only authentication. No business logic.
 
@@ -51,8 +51,12 @@ All configuration is via environment variables. Document every env var in this f
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | `postgresql://raged:raged@postgres:5432/raged` | Postgres connection URL |
+| `EMBED_PROVIDER` | `ollama` | Embedding backend (`ollama` or `openai`) |
 | `OLLAMA_URL` | `http://ollama:11434` | Ollama server URL |
 | `EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
+| `OPENAI_API_KEY` | _(empty)_ | OpenAI API key (required when `EMBED_PROVIDER=openai`; for some local compatible endpoints a dummy non-empty value is sufficient) |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Optional OpenAI-compatible base URL (include `/v1`, e.g. `http://ollama:11434/v1`) |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model |
 | `PORT` | `8080` | API listen port |
 | `BODY_LIMIT_BYTES` | `10485760` | Maximum request body size in bytes (default 10MB) |
 | `RAGED_API_TOKEN` | _(empty)_ | Bearer token for auth (empty = auth disabled) |

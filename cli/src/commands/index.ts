@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import type { Command } from "commander";
 import { ingest } from "../lib/api-client.js";
+import { getDefaultApiUrl } from "../lib/env.js";
 import { logger } from "../lib/logger.js";
 import {
   run,
@@ -32,7 +33,7 @@ interface IndexOptions {
 
 export async function cmdIndex(options: IndexOptions): Promise<void> {
   const repoUrl = options.repo;
-  const api = options.api || "http://localhost:8080";
+  const api = options.api || getDefaultApiUrl();
   const token = options.token;
   const collection = options.collection || "docs";
   const branch = options.branch || "";
@@ -123,7 +124,7 @@ export function registerIndexCommand(program: Command): void {
     .command("index")
     .description("Clone a Git repository and index its files")
     .requiredOption("--repo <url>", "Git URL to clone")
-    .option("--api <url>", "RAG API URL", "http://localhost:8080")
+    .option("--api <url>", "RAG API URL", getDefaultApiUrl())
     .option("--collection <name>", "Collection name", "docs")
     .option("--branch <name>", "Git branch to clone")
     .option("--repoId <id>", "Stable identifier for this repo")

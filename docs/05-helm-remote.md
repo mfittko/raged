@@ -140,11 +140,18 @@ helm install rag ./chart -n rag --create-namespace \
 | `enrichment.enabled` | `false` | Enable enrichment stack (worker) |
 | `enrichment.worker.replicas` | `1` | Number of enrichment worker pods |
 | `enrichment.worker.concurrency` | `4` | Concurrent tasks per worker |
-| `enrichment.worker.extractor.provider` | `ollama` | LLM provider: `ollama`, `anthropic`, or `openai` |
+| `enrichment.worker.extractor.provider` | `auto` | LLM provider: `auto`, `ollama`, `anthropic`, or `openai` |
+| `enrichment.worker.extractor.openaiBaseUrl` | `https://api.openai.com/v1` | OpenAI-compatible completion base URL |
 | `enrichment.worker.extractor.modelFast` | `llama3` | Fast model for high-throughput extraction |
 | `enrichment.worker.extractor.modelCapable` | `llama3` | Capable model for complex extraction |
 | `enrichment.worker.extractor.modelVision` | `llava` | Vision model for image-based extraction |
 | `postgres.auth.password` | `""` | Postgres password (set in production!) |
+
+With `enrichment.worker.extractor.provider=auto`, the worker picks `openai` when `openaiApiKey` is set, otherwise `anthropic` when `anthropicApiKey` is set, and falls back to `ollama`.
+
+Extraction requests use OpenAI-compatible chat completions. Set
+`enrichment.worker.extractor.provider=openai` and override
+`enrichment.worker.extractor.openaiBaseUrl` to switch compatible providers.
 
 See [values.yaml](../chart/values.yaml) for the full list.
 

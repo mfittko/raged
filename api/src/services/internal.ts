@@ -63,6 +63,30 @@ export interface TaskFailRequest {
   error: string;
 }
 
+function getNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function removeTier3SummaryFields(
+  tier3: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!tier3) {
+    return undefined;
+  }
+
+  const { summary, summary_short, summary_medium, summary_long, ...rest } = tier3;
+  void summary;
+  void summary_short;
+  void summary_medium;
+  void summary_long;
+
+  return Object.keys(rest).length > 0 ? rest : undefined;
+}
+
 /**
  * Claim next available task from the queue using SKIP LOCKED
  */
@@ -162,30 +186,18 @@ export async function submitTaskResult(taskId: string, result: TaskResultRequest
       throw new Error(`Invalid chunk index in chunkId: ${result.chunkId}`);
     }
 
-    // Extract summaries from tier3 and result
-    const summaryShort = getNonEmptyString(result.tier3?.summary_short);
-    const summaryLong = getNonEmptyString(result.tier3?.summary_long);
-    const summaryMedium = getNonEmptyString(result.tier3?.summary_medium)
-      ?? getNonEmptyString(result.summary)
-      ?? getNonEmptyString(result.tier3?.summary);
+    const tier3Meta = removeTier3SummaryFields(result.tier3);
 
-    // Remove summary fields from tier3
-    const tier3WithoutSummaries = removeTier3SummaryFields(result.tier3);
-
-    // Update chunk with enrichment results (without summaries)
+    // Update chunk with enrichment results (summary fields are document-level only)
     await client.query(
       `UPDATE chunks c
        SET enrichment_status = 'enriched',
            enriched_at = now(),
            tier2_meta = $1,
-           tier3_meta = (
-             COALESCE(c.tier3_meta, '{}'::jsonb)
-             - 'summary'
-             - 'summary_short'
-             - 'summary_medium'
-             - 'summary_long'
-             - '_error'
-           ) || $2::jsonb
+           tier3_meta = CASE
+             WHEN $2::jsonb IS NULL THEN c.tier3_meta
+             ELSE COALESCE(c.tier3_meta, '{}'::jsonb) || $2::jsonb
+           END
        FROM documents d
        WHERE c.document_id = d.id
          AND d.base_id = $3
@@ -193,7 +205,7 @@ export async function submitTaskResult(taskId: string, result: TaskResultRequest
          AND c.chunk_index = $5`,
       [
         result.tier2 ? JSON.stringify(result.tier2) : null,
-        tier3WithoutSummaries ? JSON.stringify(tier3WithoutSummaries) : '{}',
+        tier3Meta ? JSON.stringify(tier3Meta) : null,
         baseId,
         result.collection,
         chunkIndex,
@@ -302,6 +314,26 @@ export async function submitTaskResult(taskId: string, result: TaskResultRequest
       );
     }
 
+    const summaryShort = getNonEmptyString(result.tier3?.summary_short);
+    const summaryLong = getNonEmptyString(result.tier3?.summary_long);
+    const summaryMedium =
+      getNonEmptyString(result.tier3?.summary_medium) ??
+      getNonEmptyString(result.summary) ??
+      getNonEmptyString(result.tier3?.summary);
+
+    // Update document-level summary variants if provided
+    if (summaryShort || summaryMedium || summaryLong) {
+      await client.query(
+        `UPDATE documents
+         SET summary_short = COALESCE($1, summary_short),
+             summary_medium = COALESCE($2, summary_medium),
+             summary_long = COALESCE($3, summary_long),
+             summary = COALESCE($2, summary_medium, summary)
+         WHERE base_id = $4 AND collection = $5`,
+        [summaryShort, summaryMedium, summaryLong, baseId, result.collection]
+      );
+    }
+
     // Mark task as completed
     await client.query(
       `UPDATE task_queue
@@ -330,7 +362,7 @@ export async function failTask(taskId: string, failRequest: TaskFailRequest): Pr
   try {
     await client.query("BEGIN");
 
-    // Get current task state and payload
+    // Get current task state
     const taskResult = await client.query<{
       attempt: number;
       max_attempts: number;
@@ -345,58 +377,62 @@ export async function failTask(taskId: string, failRequest: TaskFailRequest): Pr
     }
 
     const { attempt, max_attempts, payload } = taskResult.rows[0];
-    const isFinal = attempt >= max_attempts;
+    const isFinalAttempt = attempt >= max_attempts;
 
-    // Extract chunk index from payload
-    let chunkIndex: number | null = null;
-    if (typeof payload.chunkIndex === "number") {
-      chunkIndex = payload.chunkIndex;
-    } else if (typeof payload.chunkId === "string") {
-      // Parse from chunkId format "base-id:N"
-      const lastColonIndex = payload.chunkId.lastIndexOf(":");
-      if (lastColonIndex > 0 && lastColonIndex < payload.chunkId.length - 1) {
-        const parsedIndex = parseInt(payload.chunkId.slice(lastColonIndex + 1), 10);
-        if (!isNaN(parsedIndex) && parsedIndex >= 0) {
-          chunkIndex = parsedIndex;
+    const payloadChunkId = typeof payload.chunkId === "string" ? payload.chunkId : null;
+    const payloadBaseId = typeof payload.baseId === "string" ? payload.baseId : null;
+    const payloadCollection = typeof payload.collection === "string" ? payload.collection : null;
+
+    const chunkIndexFromPayload =
+      typeof payload.chunkIndex === "number" && Number.isInteger(payload.chunkIndex)
+        ? payload.chunkIndex
+        : null;
+
+    let chunkIndex: number | null = chunkIndexFromPayload;
+    if (chunkIndex === null && payloadChunkId) {
+      const separatorIndex = payloadChunkId.lastIndexOf(":");
+      if (separatorIndex > 0 && separatorIndex < payloadChunkId.length - 1) {
+        const parsedChunkIndex = Number.parseInt(payloadChunkId.slice(separatorIndex + 1), 10);
+        if (Number.isInteger(parsedChunkIndex) && parsedChunkIndex >= 0) {
+          chunkIndex = parsedChunkIndex;
         }
       }
     }
 
-    // Record error metadata in chunk tier3_meta if we have the necessary info
-    if (payload.baseId && payload.collection && chunkIndex !== null) {
+    if (payloadBaseId && payloadCollection && chunkIndex !== null) {
       await client.query(
-        `UPDATE chunks c SET
-          enrichment_status = 'failed',
-          tier3_meta = COALESCE(c.tier3_meta, '{}'::jsonb) || jsonb_build_object(
-            '_error', jsonb_build_object(
-              'message', $4::text,
-              'taskId', $5::text,
-              'attempt', $6::int,
-              'maxAttempts', $7::int,
-              'final', $8::boolean,
-              'failedAt', now()::text,
-              'chunkIndex', $3::int
-            )
-          )
-        FROM documents d
-        WHERE c.document_id = d.id
-          AND d.base_id = $1
-          AND d.collection = $2
-          AND c.chunk_index = $3`,
+        `UPDATE chunks c
+         SET enrichment_status = 'failed',
+             tier3_meta = COALESCE(c.tier3_meta, '{}'::jsonb) || jsonb_build_object(
+               '_error',
+               jsonb_build_object(
+                 'message', $4::text,
+                 'taskId', $5::text,
+                 'attempt', $6::int,
+                 'maxAttempts', $7::int,
+                 'final', $8::boolean,
+                 'failedAt', now()::text
+               )
+             )
+         FROM documents d
+         WHERE c.document_id = d.id
+           AND d.base_id = $1
+           AND d.collection = $2
+           AND c.chunk_index = $3`,
         [
-          payload.baseId,
-          payload.collection,
+          payloadBaseId,
+          payloadCollection,
           chunkIndex,
           failRequest.error,
           taskId,
           attempt,
           max_attempts,
-          isFinal,
+          isFinalAttempt,
         ]
       );
     }
 
-    if (isFinal) {
+    if (isFinalAttempt) {
       // Move to dead-letter (dead status)
       await client.query(
         `UPDATE task_queue

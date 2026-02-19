@@ -80,7 +80,7 @@ What exists:
 
 **CLI enhancements:**
 - ✅ `raged ingest` — Ingest arbitrary files (PDFs, images, Slack exports)
-- ✅ `raged enrich` — Trigger and monitor enrichment with `--force` and `--stats-only` flags
+- ✅ `raged enrich` — Trigger and monitor enrichment with `--force` and `--stats` flags
 - ✅ `raged graph` — Query knowledge graph entities
 - ✅ `--no-enrich` / `--doc-type` flags on ingest commands (enrichment is on by default when enabled server-side)
 

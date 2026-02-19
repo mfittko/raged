@@ -24,10 +24,7 @@ vi.mock("../db.js", () => ({
           tier2_meta: null,
           tier3_meta: null,
           doc_summary: null,
-          doc_summary_short: null,
-          doc_summary_medium: null,
-          doc_summary_long: null,
-          payload_checksum: null,
+          payload_checksum: "checksum-abc",
         },
       ],
     })),
@@ -158,45 +155,13 @@ describe("query service", () => {
     expect(result.results[0].score).toBeLessThanOrEqual(1);
   });
 
-  it("includes summary and checksum fields in payload", async () => {
-    const queryMock = vi.fn(async () => ({
-      rows: [
-        {
-          chunk_id: "test-id:0",
-          distance: 0.1,
-          text: "hello world",
-          source: "test.txt",
-          chunk_index: 0,
-          base_id: "test-id",
-          doc_type: "text",
-          repo_id: null,
-          repo_url: null,
-          path: null,
-          lang: null,
-          item_url: null,
-          tier1_meta: {},
-          tier2_meta: null,
-          tier3_meta: null,
-          doc_summary: "A short summary",
-          doc_summary_short: "Short",
-          doc_summary_medium: "Medium summary",
-          doc_summary_long: "A longer summary",
-          payload_checksum: "abc123",
-        },
-      ],
-    }));
+  it("includes payload checksum in query payload", async () => {
+    const request: QueryRequest = {
+      query: "test",
+    };
 
-    const { getPool } = await import("../db.js");
-    (getPool as any).mockReturnValueOnce({ query: queryMock });
-
-    const result = await query({ query: "hello" });
-
-    expect(result.ok).toBe(true);
-    expect(result.results[0].payload?.docSummary).toBe("A short summary");
-    expect(result.results[0].payload?.docSummaryShort).toBe("Short");
-    expect(result.results[0].payload?.docSummaryMedium).toBe("Medium summary");
-    expect(result.results[0].payload?.docSummaryLong).toBe("A longer summary");
-    expect(result.results[0].payload?.payloadChecksum).toBe("abc123");
+    const result = await query(request);
+    expect(result.results[0]?.payload).toMatchObject({ payloadChecksum: "checksum-abc" });
   });
 
   it("handles empty results gracefully", async () => {
@@ -256,6 +221,60 @@ describe("query service", () => {
     const params = (firstCallArgs[1] ?? []) as unknown[];
     expect(sql).toContain("c.doc_type = $5");
     expect(params[4]).toBe("code");
+  });
+
+  it("applies auto minScore cutoff of 0.3 for single-term query", async () => {
+    const queryMock = vi.fn(async () => ({ rows: [] }));
+
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    await query({ query: "hello" });
+
+    const firstCall = queryMock.mock.calls[0] as unknown[];
+    const sql = String(firstCall[0] ?? "");
+    const params = (firstCall[1] ?? []) as unknown[];
+    expect(sql).toContain("AND (c.embedding <=> $2::vector) <= $4");
+    expect(params[3]).toBe(0.7);
+  });
+
+  it("applies auto minScore cutoff of 0.4 for two-term query", async () => {
+    const queryMock = vi.fn(async () => ({ rows: [] }));
+
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    await query({ query: "github invoice" });
+
+    const firstCall = queryMock.mock.calls[0] as unknown[];
+    const params = (firstCall[1] ?? []) as unknown[];
+    expect(params[3]).toBe(0.6);
+  });
+
+  it("applies auto minScore cutoff of 0.6 for five-term query", async () => {
+    const queryMock = vi.fn(async () => ({ rows: [] }));
+
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    await query({ query: "github invoice inv89909018 copilot pro" });
+
+    const firstCall = queryMock.mock.calls[0] as unknown[];
+    const params = (firstCall[1] ?? []) as unknown[];
+    expect(params[3]).toBe(0.4);
+  });
+
+  it("applies custom minScore cutoff", async () => {
+    const queryMock = vi.fn(async () => ({ rows: [] }));
+
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    await query({ query: "hello", minScore: 0.8 });
+
+    const firstCall = queryMock.mock.calls[0] as unknown[];
+    const params = (firstCall[1] ?? []) as unknown[];
+    expect(params[3] as number).toBeCloseTo(0.2, 12);
   });
 
   it("returns graph data when graph expansion is requested", async () => {

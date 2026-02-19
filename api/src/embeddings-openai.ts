@@ -14,14 +14,10 @@ function getOpenAiBaseUrl(): string {
 }
 
 function ensureEmbeddingArray(value: unknown): number[] {
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    value.some((item) => typeof item !== "number" || !Number.isFinite(item))
-  ) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "number")) {
     throw new Error("Invalid embedding payload from OpenAI");
   }
-  return value as number[];
+  return value;
 }
 
 export async function embedWithOpenAi(text: string): Promise<number[]> {

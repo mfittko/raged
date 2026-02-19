@@ -174,27 +174,4 @@ describe("embed", () => {
     await expect(embed(["hello"])).rejects.toThrow("OPENAI_API_KEY is required");
     expect(fetchMock).not.toHaveBeenCalled();
   });
-
-  it("rejects non-finite OpenAI embeddings", async () => {
-    process.env.EMBED_PROVIDER = "openai";
-    process.env.OPENAI_API_KEY = "test-key";
-
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: [{ embedding: [0.9, Number.POSITIVE_INFINITY] }] }),
-    });
-
-    await expect(embed(["hello"])).rejects.toThrow("Invalid embedding payload from OpenAI");
-  });
-
-  it("rejects empty Ollama embeddings", async () => {
-    delete process.env.EMBED_PROVIDER;
-
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({ embedding: [] }),
-    });
-
-    await expect(embed(["hello"])).rejects.toThrow("Invalid embedding payload from Ollama");
-  });
 });

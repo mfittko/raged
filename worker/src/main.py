@@ -4,7 +4,14 @@ import os
 import time
 
 from src import api_client
-from src.config import MAX_RETRIES, QUEUE_NAME, WORKER_CONCURRENCY
+from src.config import (
+    EXTRACTOR_PROVIDER,
+    MAX_RETRIES,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
+    QUEUE_NAME,
+    WORKER_CONCURRENCY,
+)
 from src.pipeline import process_task
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -81,6 +88,12 @@ async def worker_loop() -> None:
     """Main worker loop with multiple concurrent tasks and watchdog."""
     logger.info(f"Worker started with concurrency={WORKER_CONCURRENCY}, id={WORKER_ID}")
     logger.info(f"Listening on queue: {QUEUE_NAME}")
+    logger.info(
+        "Extractor provider resolved to %s (OPENAI_API_KEY_present=%s, OPENAI_BASE_URL=%s)",
+        EXTRACTOR_PROVIDER,
+        bool(OPENAI_API_KEY),
+        OPENAI_BASE_URL,
+    )
 
     # Create fixed number of worker tasks for concurrency control
     # Each worker processes one task at a time from the queue

@@ -8,7 +8,7 @@ raged is a **multi-agent memory hub**: a shared retrieval-augmented generation (
 
 ### SOLID
 
-- **Single Responsibility (SRP):** Each module does exactly one thing. `chunking.ts` chunks text. `ollama.ts` embeds text. `db.ts` manages Postgres storage. Do not mix concerns.
+- **Single Responsibility (SRP):** Each module does exactly one thing. `chunking.ts` chunks text. `embeddings.ts` orchestrates embeddings. `db.ts` manages Postgres storage. Do not mix concerns.
 - **Open/Closed:** Add new embedding providers or vector backends via new modules, not by modifying existing ones. Design for adapter patterns when the third use case appears.
 - **Liskov Substitution:** If you introduce an interface, every implementation must be a drop-in replacement. No special-casing.
 - **Interface Segregation:** Keep interfaces small and focused. A consumer of embeddings should not depend on chunking types.

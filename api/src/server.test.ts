@@ -28,26 +28,6 @@ vi.mock("./embeddings.js", () => ({
   ),
 }));
 
-// Mock ollama module (used by query path)
-vi.mock("./ollama.js", () => ({
-  embed: vi.fn(async (texts: string[]) =>
-    texts.map(() => Array(768).fill(0.1))
-  ),
-}));
-
-vi.mock("./blob-store.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./blob-store.js")>();
-  return {
-    ...actual,
-    downloadRawBlobStream: vi.fn(async () => ({
-      stream: Readable.from([Buffer.from("blob payload")]),
-      contentLength: null,
-      contentType: null,
-    })),
-    downloadRawBlob: vi.fn(async () => Buffer.from("blob payload")),
-  };
-});
-
 describe("API integration tests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -195,6 +175,115 @@ describe("API integration tests", () => {
     });
   });
 
+  describe("POST /query/fulltext-first", () => {
+    it("returns concatenated extracted text for the first match document", async () => {
+      const { getPool } = await import("./db.js");
+      const poolMock = {
+        query: vi.fn(async (sql: string) => {
+          if (sql.includes("chunk_id") && sql.includes("c.embedding <=>")) {
+            return {
+              rows: [
+                {
+                  chunk_id: "doc-1:1",
+                  distance: 0.1,
+                  text: "page 2 text",
+                  source: "invoice.pdf",
+                  chunk_index: 1,
+                  base_id: "doc-1",
+                  doc_type: "pdf",
+                  repo_id: null,
+                  repo_url: null,
+                  path: null,
+                  lang: null,
+                  item_url: null,
+                  tier1_meta: {},
+                  tier2_meta: null,
+                  tier3_meta: null,
+                  doc_summary: null,
+                  payload_checksum: null,
+                },
+              ],
+            };
+          }
+
+          if (sql.includes("FROM documents d") && sql.includes("JOIN chunks c ON c.document_id = d.id")) {
+            return {
+              rows: [
+                { source: "invoice.pdf", chunk_index: 0, text: "page 1 text" },
+                { source: "invoice.pdf", chunk_index: 1, text: "page 2 text" },
+              ],
+            };
+          }
+
+          return { rows: [] };
+        }),
+      };
+      (getPool as any).mockReturnValueOnce(poolMock).mockReturnValueOnce(poolMock);
+
+      const app = buildApp();
+      const res = await app.inject({
+        method: "POST",
+        url: "/query/fulltext-first",
+        headers: {
+          authorization: "Bearer test-token",
+        },
+        payload: {
+          collection: "docs",
+          query: "invoice",
+          topK: 1,
+          minScore: 0,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/plain");
+      expect(res.body).toBe("page 1 text\n\npage 2 text");
+      await app.close();
+    });
+  });
+
+  describe("GET /collections", () => {
+    it("returns collection stats", async () => {
+      const { getPool } = await import("./db.js");
+      (getPool as any).mockReturnValueOnce({
+        query: vi.fn(async () => ({
+          rows: [
+            {
+              collection: "downloads-pdf",
+              document_count: "12",
+              chunk_count: "134",
+              enriched_chunk_count: "101",
+              last_seen_at: "2026-02-17T00:00:00.000Z",
+            },
+          ],
+        })),
+      });
+
+      const app = buildApp();
+      const res = await app.inject({
+        method: "GET",
+        url: "/collections",
+        headers: {
+          authorization: "Bearer test-token",
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.collections).toEqual([
+        {
+          collection: "downloads-pdf",
+          documentCount: 12,
+          chunkCount: 134,
+          enrichedChunkCount: 101,
+          lastSeenAt: "2026-02-17T00:00:00.000Z",
+        },
+      ]);
+      await app.close();
+    });
+  });
+
   describe("auth integration", () => {
     const ORIGINAL_TOKEN = process.env.RAGED_API_TOKEN;
 
@@ -332,19 +421,23 @@ describe("API integration tests", () => {
       await app.close();
     });
 
-    it("POST /enrichment/clear handles null body safely", async () => {
+    it("POST /enrichment/clear returns clear result", async () => {
+      const { getPool } = await import("./db.js");
+      (getPool as any).mockReturnValueOnce({
+        query: vi.fn(async () => ({ rowCount: 2, rows: [{ id: "1" }, { id: "2" }] })),
+      });
+
       const app = buildApp();
       const res = await app.inject({
         method: "POST",
         url: "/enrichment/clear",
         headers: {
           authorization: "Bearer test-token",
-          "content-type": "application/json",
         },
-        payload: "null",
+        payload: { collection: "docs", filter: "invoice" },
       });
 
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(200);
       await app.close();
     });
   });

@@ -4,6 +4,7 @@ import logging
 import threading
 
 import spacy
+from spacy.tokens import Doc
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,10 @@ def extract_keywords(text: str, top_n: int = 10) -> list[str]:
     nlp = _get_nlp()
     doc = nlp(text)
 
+    if not Doc.has_extension("phrases"):
+        logger.debug("spaCy Doc extension 'phrases' is not registered; returning no keywords")
+        return []
+
     # Extract top phrases
     phrases = []
     for phrase in doc._.phrases[:top_n]:
@@ -127,6 +132,10 @@ def process_text_nlp(text: str) -> dict:
 
     # Extract entities
     entities = [{"text": ent.text, "label": ent.label_} for ent in doc.ents]
+
+    if not Doc.has_extension("phrases"):
+        logger.debug("spaCy Doc extension 'phrases' is not registered; returning no keywords")
+        return {"entities": entities, "keywords": []}
 
     # Extract keywords from TextRank
     keywords = []

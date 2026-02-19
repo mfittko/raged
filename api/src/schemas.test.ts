@@ -339,6 +339,7 @@ describe("query schema validation", () => {
         collection: "my-col",
         query: "auth flow",
         topK: 5,
+        minScore: 0.75,
         filter: { must: [{ key: "lang", match: { value: "ts" } }] },
       },
     });
@@ -346,36 +347,23 @@ describe("query schema validation", () => {
     await app.close();
   });
 
-  it("accepts valid minScore between 0 and 1", async () => {
+  it("accepts minScore at bounds 0 and 1", async () => {
     const app = buildApp();
-    const res = await app.inject({
-      method: "POST",
-      url: "/query",
-      payload: { query: "authentication flow", minScore: 0.5 },
-    });
-    expect(res.statusCode).toBe(200);
-    await app.close();
-  });
 
-  it("accepts minScore of 0", async () => {
-    const app = buildApp();
-    const res = await app.inject({
+    const low = await app.inject({
       method: "POST",
       url: "/query",
-      payload: { query: "authentication flow", minScore: 0 },
+      payload: { query: "hello", minScore: 0 },
     });
-    expect(res.statusCode).toBe(200);
-    await app.close();
-  });
+    expect(low.statusCode).toBe(200);
 
-  it("accepts minScore of 1", async () => {
-    const app = buildApp();
-    const res = await app.inject({
+    const high = await app.inject({
       method: "POST",
       url: "/query",
-      payload: { query: "authentication flow", minScore: 1 },
+      payload: { query: "hello", minScore: 1 },
     });
-    expect(res.statusCode).toBe(200);
+    expect(high.statusCode).toBe(200);
+
     await app.close();
   });
 
@@ -384,7 +372,7 @@ describe("query schema validation", () => {
     const res = await app.inject({
       method: "POST",
       url: "/query",
-      payload: { query: "authentication flow", minScore: -0.1 },
+      payload: { query: "hello", minScore: -0.1 },
     });
     expect(res.statusCode).toBe(400);
     await app.close();
@@ -395,7 +383,7 @@ describe("query schema validation", () => {
     const res = await app.inject({
       method: "POST",
       url: "/query",
-      payload: { query: "authentication flow", minScore: 1.1 },
+      payload: { query: "hello", minScore: 1.1 },
     });
     expect(res.statusCode).toBe(400);
     await app.close();

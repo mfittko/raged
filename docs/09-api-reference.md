@@ -143,6 +143,7 @@ Embed a query and search for similar chunks.
   "collection": "docs",
   "query": "authentication flow",
   "topK": 5,
+  "minScore": 0.5,
   "filter": {
     "must": [
       { "key": "repoId", "match": { "value": "my-repo" } },
@@ -157,7 +158,14 @@ Embed a query and search for similar chunks.
 | `collection` | string | No | Collection name (default: `docs`) |
 | `query` | string | Yes | Search query text |
 | `topK` | number | No | Number of results (default: `8`) |
+| `minScore` | number | No | Minimum similarity score cutoff (0-1). When omitted, API uses an adaptive default based on query term count. |
 | `filter` | object | No | Filter object |
+
+**Adaptive default `minScore` (when omitted):**
+- 1 term: `0.3`
+- 2 terms: `0.4`
+- 3-4 terms: `0.5`
+- 5+ terms: `0.6`
 
 **Response:**
 ```json
@@ -216,6 +224,46 @@ Combine filters:
   ]
 }
 ```
+
+---
+
+### POST /query/download-first
+
+Run a query and download the raw payload of the first match.
+
+**Request:**
+```json
+{
+  "collection": "docs",
+  "query": "invoice",
+  "topK": 8,
+  "minScore": 0.5,
+  "filter": {
+    "must": [
+      { "key": "lang", "match": { "value": "text" } }
+    ]
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `collection` | string | No | Collection name (default: `docs`) |
+| `query` | string | Yes | Search query text |
+| `topK` | number | No | Number of candidates to search (default: `8`) |
+| `minScore` | number | No | Minimum similarity score cutoff (0-1). When omitted, API uses an adaptive default based on query term count. |
+| `filter` | object | No | Filter object |
+
+**Response:**
+- `200` with binary payload body (`raw_data` or blob-backed payload)
+- Headers include:
+  - `Content-Type` (document MIME type)
+  - `Content-Disposition` (filename)
+  - `X-Raged-Source` (source identifier)
+
+**Error responses:**
+- `404` when no query results are found
+- `404` when first match has no raw payload available
 
 ---
 
@@ -359,7 +407,8 @@ Manually trigger enrichment for existing chunks.
 ```json
 {
   "collection": "docs",
-  "force": false
+  "force": false,
+  "filter": "invoice"
 }
 ```
 
@@ -367,6 +416,7 @@ Manually trigger enrichment for existing chunks.
 |-------|------|----------|-------------|
 | `collection` | string | No | Collection to scan (default: `docs`) |
 | `force` | boolean | No | Re-enqueue already-enriched items (default: `false`) |
+| `filter` | string | No | Full-text filter for selecting matching docs/chunks before enqueue |
 
 **Response:**
 ```json
@@ -383,9 +433,47 @@ Manually trigger enrichment for existing chunks.
 
 **Behavior:**
 - Scans collection for chunks with `enrichmentStatus` != `"enriched"` (unless `force: true`)
+- If `filter` is provided, applies full-text matching over chunk/document text fields and summaries
 - Creates enrichment tasks with correct `totalChunks` per baseId
 - Inserts tasks to Postgres `enrichment_tasks` table
 - Returns 0 when enrichment is disabled
+
+---
+
+### POST /enrichment/clear
+
+Clear queued enrichment tasks.
+
+**Request:**
+```json
+{
+  "collection": "docs",
+  "filter": "invoice"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `collection` | string | No | Collection scope to clear (default: `docs`) |
+| `filter` | string | No | Full-text filter over queued task payload text/source/baseId/docType |
+
+**Response:**
+```json
+{
+  "ok": true,
+  "cleared": 42
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ok` | boolean | Success indicator |
+| `cleared` | number | Number of queued tasks removed |
+
+**Behavior:**
+- Clears only queued enrichment states (`pending`, `processing`, `dead`)
+- Restricts to the specified collection via queued task payload
+- If `filter` is set, applies full-text + substring matching against payload content fields
 
 ---
 

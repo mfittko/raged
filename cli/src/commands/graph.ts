@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { getDefaultApiUrl } from "../lib/env.js";
 import { getGraphEntity } from "../lib/api-client.js";
 import { logger } from "../lib/logger.js";
 import type { GraphEntityResponse } from "../lib/types.js";
@@ -10,7 +11,7 @@ interface GraphOptions {
 }
 
 export async function cmdGraph(options: GraphOptions): Promise<void> {
-  const api = options.api || "http://localhost:8080";
+  const api = options.api || getDefaultApiUrl();
   const token = options.token;
   const entity = options.entity;
 
@@ -59,7 +60,7 @@ export function registerGraphCommand(program: Command): void {
     .command("graph")
     .description("Query the knowledge graph for entity information")
     .requiredOption("--entity <name>", "Entity name to look up")
-    .option("--api <url>", "RAG API URL", "http://localhost:8080")
+    .option("--api <url>", "RAG API URL", getDefaultApiUrl())
     .option("--token <token>", "Bearer token for auth")
     .action(cmdGraph);
 }

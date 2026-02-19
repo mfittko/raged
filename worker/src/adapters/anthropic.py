@@ -4,7 +4,12 @@ import json
 import logging
 
 from src.adapters.base import ExtractorAdapter, ImageDescription
-from src.config import ANTHROPIC_API_KEY, EXTRACTOR_MODEL_CAPABLE, EXTRACTOR_MODEL_FAST
+from src.config import (
+    ANTHROPIC_API_KEY,
+    EXTRACTOR_MAX_OUTPUT_TOKENS,
+    EXTRACTOR_MODEL_CAPABLE,
+    EXTRACTOR_MODEL_FAST,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +26,7 @@ class AnthropicAdapter(ExtractorAdapter):
         self.client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
         self.fast_model = EXTRACTOR_MODEL_FAST
         self.capable_model = EXTRACTOR_MODEL_CAPABLE
-        self.max_tokens = 4096
+        self.max_tokens = EXTRACTOR_MAX_OUTPUT_TOKENS
 
     async def extract_metadata(
         self, text: str, doc_type: str, schema: dict, prompt_template: str = ""

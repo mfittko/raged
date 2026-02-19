@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
+import path from "node:path";
 import { registerAuth } from "./auth.js";
 import { registerErrorHandler } from "./errors.js";
 import { 
@@ -20,13 +21,40 @@ import type { IngestRequest } from "./services/ingest.js";
 import { validateIngestRequest } from "./services/ingest-validation.js";
 import { ingest } from "./services/ingest.js";
 import { query } from "./services/query.js";
-import { getEnrichmentStatus, getEnrichmentStats, enqueueEnrichment, clearEnrichmentQueue } from "./services/enrichment.js";
+import {
+  getEnrichmentStatus,
+  getEnrichmentStats,
+  enqueueEnrichment,
+  clearEnrichmentQueue,
+} from "./services/enrichment.js";
 import { listCollections } from "./services/collections.js";
 import { claimTask, submitTaskResult, failTask, recoverStaleTasks } from "./services/internal.js";
 import { getPool } from "./db.js";
-import { downloadRawBlobStream } from "./blob-store.js";
-import path from "node:path";
-import type { Readable } from "node:stream";
+import { downloadRawBlob } from "./blob-store.js";
+
+function deriveFileName(source: string, mimeType: string | null): string {
+  const sourcePart = source.split(/[\\/]/).pop() || "download";
+  const hasExt = /\.[a-zA-Z0-9]{1,10}$/.test(sourcePart);
+  if (hasExt) {
+    return sourcePart;
+  }
+
+  const extByMime: Record<string, string> = {
+    "application/pdf": ".pdf",
+    "text/html": ".html",
+    "text/plain": ".txt",
+    "text/markdown": ".md",
+    "application/json": ".json",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+  };
+
+  const normalizedMime = (mimeType || "").split(";")[0].trim().toLowerCase();
+  const ext = extByMime[normalizedMime] || ".bin";
+  return `${sourcePart}${ext}`;
+}
 
 export function buildApp() {
   // Trust proxy only when explicitly enabled via env var for security
@@ -91,146 +119,113 @@ export function buildApp() {
     return reply.send(result);
   });
 
-  function deriveFileName(source: string, mimeType: string): string {
-    let pathLike = source;
-    try {
-      const url = new URL(source);
-      if (url.pathname) {
-        pathLike = url.pathname;
-      }
-    } catch {
-      // Not a URL; treat source as plain path/identifier
-    }
-
-    const segments = pathLike.split("/").filter((segment) => segment.length > 0);
-    const candidate = segments.length > 0 ? segments[segments.length - 1] : "download";
-    let sanitized = candidate.replace(/[\x00-\x1f\x7f"]/g, "_");
-    if (sanitized.length === 0 || sanitized === "." || sanitized === "..") {
-      sanitized = "download";
-    }
-
-    if (path.extname(sanitized).length > 0) {
-      return sanitized;
-    }
-    const mimeToExt: Record<string, string> = {
-      "application/pdf": ".pdf",
-      "text/html": ".html",
-      "text/plain": ".txt",
-      "text/markdown": ".md",
-      "application/json": ".json",
-      "image/png": ".png",
-      "image/jpeg": ".jpg",
-      "image/gif": ".gif",
-      "image/webp": ".webp",
-    };
-    const ext = mimeToExt[mimeType] ?? ".bin";
-    return `${sanitized}${ext}`;
-  }
-
   app.post("/query/download-first", { schema: queryDownloadFirstSchema }, async (req, reply) => {
     const body = req.body as any;
     const queryResult = await query(body, body.collection);
-    const first = queryResult.results[0];
-    if (!first) {
-      return reply.status(404).send({ error: "No results found for query" });
+    const firstResult = queryResult.results[0];
+
+    if (!firstResult) {
+      return reply.status(404).send({ error: "No query results found" });
     }
 
-    const baseId = first.payload?.baseId as string | undefined;
-    if (!baseId) {
-      return reply.status(404).send({ error: "Result has no baseId" });
+    const payload = firstResult.payload as { baseId?: string } | undefined;
+    const baseId = payload?.baseId;
+    const collection = body.collection || "docs";
+
+    if (!baseId || typeof baseId !== "string") {
+      return reply.status(404).send({ error: "First match has no downloadable source" });
     }
 
-    const col = body.collection || "docs";
     const pool = getPool();
     const docResult = await pool.query<{
+      source: string;
       raw_data: Buffer | null;
       raw_key: string | null;
-      source: string;
       mime_type: string | null;
     }>(
-      `SELECT raw_data, raw_key, source, mime_type FROM documents WHERE base_id = $1 AND collection = $2 LIMIT 1`,
-      [baseId, col]
+      `SELECT source, raw_data, raw_key, mime_type
+       FROM documents
+       WHERE base_id = $1 AND collection = $2
+       LIMIT 1`,
+      [baseId, collection],
     );
 
-    const doc = docResult.rows[0];
-    if (!doc) {
-      return reply.status(404).send({ error: `Document not found: ${baseId}` });
+    if (docResult.rows.length === 0) {
+      return reply.status(404).send({ error: "Document not found for first match" });
     }
 
-    let responseBody: Buffer | Readable;
-    if (doc.raw_data !== null) {
-      responseBody = doc.raw_data;
-    } else if (doc.raw_key) {
-      try {
-        const blob = await downloadRawBlobStream(doc.raw_key);
-        responseBody = blob.stream;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        return reply.status(502).send({ error: `Failed to retrieve document from blob store: ${message}` });
-      }
-    } else {
-      return reply.status(404).send({ error: "No raw data available for document" });
+    const document = docResult.rows[0];
+    let rawBytes: Buffer | null = document.raw_data;
+
+    if (!rawBytes && document.raw_key) {
+      rawBytes = await downloadRawBlob(document.raw_key);
     }
 
-    const mimeType = doc.mime_type || "application/octet-stream";
-    const fileName = deriveFileName(doc.source, mimeType);
-    const safeSource = doc.source.replace(/[\x00-\x1f\x7f]/g, "_");
+    if (!rawBytes) {
+      return reply.status(404).send({ error: "Raw payload is not available for first match" });
+    }
 
-    return reply
-      .header("Content-Type", mimeType)
-      .header("Content-Disposition", `attachment; filename="${fileName}"`)
-      .header("X-Raged-Source", safeSource)
-      .send(responseBody);
+    const fileName = deriveFileName(document.source, document.mime_type);
+    const mimeType = document.mime_type || "application/octet-stream";
+
+    reply.header("content-type", mimeType);
+    reply.header("content-disposition", `attachment; filename="${fileName}"`);
+    reply.header("x-raged-source", document.source);
+    return reply.send(rawBytes);
   });
 
   app.post("/query/fulltext-first", { schema: queryDownloadFirstSchema }, async (req, reply) => {
     const body = req.body as any;
     const queryResult = await query(body, body.collection);
-    const first = queryResult.results[0];
-    if (!first) {
-      return reply.status(404).send({ error: "No results found for query" });
+    const firstResult = queryResult.results[0];
+
+    if (!firstResult) {
+      return reply.status(404).send({ error: "No query results found" });
     }
 
-    const baseId = first.payload?.baseId as string | undefined;
-    if (!baseId) {
-      return reply.status(404).send({ error: "Result has no baseId" });
+    const payload = firstResult.payload as { baseId?: string } | undefined;
+    const baseId = payload?.baseId;
+    const collection = body.collection || "docs";
+
+    if (!baseId || typeof baseId !== "string") {
+      return reply.status(404).send({ error: "First match has no document identifier" });
     }
 
-    const col = body.collection || "docs";
     const pool = getPool();
-    const chunksResult = await pool.query<{
-      text: string;
+    const textResult = await pool.query<{
       source: string;
+      chunk_index: number;
+      text: string;
     }>(
-      `SELECT c.text, d.source
-      FROM documents d
-      JOIN chunks c ON c.document_id = d.id
-      WHERE d.base_id = $1 AND d.collection = $2
-      ORDER BY c.chunk_index`,
-      [baseId, col]
+      `SELECT d.source, c.chunk_index, c.text
+       FROM documents d
+       JOIN chunks c ON c.document_id = d.id
+       WHERE d.base_id = $1 AND d.collection = $2
+       ORDER BY c.chunk_index`,
+      [baseId, collection],
     );
 
-    if (chunksResult.rows.length === 0) {
-      return reply.status(404).send({ error: `No chunks found for document: ${baseId}` });
+    if (textResult.rows.length === 0) {
+      return reply.status(404).send({ error: "No extracted text available for first match" });
     }
 
-    const source = chunksResult.rows[0]?.source || baseId;
-    const segment = source.split("/").pop() || source;
-    const baseName = path.basename(segment.replace(/[\x00-\x1f\x7f"]/g, "_"), path.extname(segment));
-    const fullText = chunksResult.rows
-      .map((r) => r.text)
-      .filter((t) => t && t.trim().length > 0)
+    const source = textResult.rows[0]?.source || "document";
+    const fullText = textResult.rows
+      .map((row) => row.text)
+      .filter((value) => typeof value === "string" && value.trim().length > 0)
       .join("\n\n");
-    const safeSource = source.replace(/[\x00-\x1f\x7f]/g, "_");
 
-    return reply
-      .header("Content-Type", "text/plain; charset=utf-8")
-      .header("Content-Disposition", `attachment; filename="${baseName}.txt"`)
-      .header("X-Raged-Source", safeSource)
-      .send(fullText);
+    if (fullText.length === 0) {
+      return reply.status(404).send({ error: "No extracted text available for first match" });
+    }
+
+    const fileName = `${path.parse(source).name || "document"}.txt`;
+    reply.header("content-type", "text/plain; charset=utf-8");
+    reply.header("content-disposition", `attachment; filename="${fileName}"`);
+    reply.header("x-raged-source", source);
+    return reply.send(fullText);
   });
 
-  // Collections endpoint
   app.get("/collections", async (_req, reply) => {
     const result = await listCollections();
     return reply.send(result);
@@ -244,7 +239,7 @@ export function buildApp() {
     return reply.send(result);
   });
 
-  app.get("/enrichment/stats", { schema: enrichmentStatsSchema }, async (req, reply) => {
+  app.get("/enrichment/stats", async (req, reply) => {
     const { collection, filter } = req.query as { collection?: string; filter?: string };
     const result = await getEnrichmentStats({ collection, filter });
     return reply.send(result);
@@ -258,8 +253,7 @@ export function buildApp() {
 
   app.post("/enrichment/clear", { schema: enrichmentClearSchema }, async (req, reply) => {
     const body = req.body as any;
-    const collection = typeof body.collection === "string" ? body.collection : undefined;
-    const result = await clearEnrichmentQueue(body, collection);
+    const result = await clearEnrichmentQueue(body, body.collection);
     return reply.send(result);
   });
 

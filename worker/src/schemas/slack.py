@@ -13,7 +13,11 @@ class ActionItem(BaseModel):
 class SlackMetadata(BaseModel):
     """Metadata extracted from Slack messages."""
 
-    summary: str
+    summary_short: str = ""
+    summary_medium: str = ""
+    summary_long: str = ""
+    summary: str = ""
+    keywords: list[str] = Field(default_factory=list)
     decisions: list[str] = Field(default_factory=list)
     action_items: list[ActionItem] = Field(default_factory=list)
     sentiment: str  # positive, neutral, negative
@@ -23,7 +27,11 @@ class SlackMetadata(BaseModel):
 PROMPT = """Analyze this Slack conversation and extract metadata.
 
 Provide:
-- summary: A brief summary of the conversation
+- summary_short: A one-sentence summary of the conversation
+- summary_medium: A 2-3 sentence summary of the conversation
+- summary_long: A detailed paragraph summary of the conversation
+- summary: Same content as summary_medium for backward compatibility
+- keywords: List of important keywords for the conversation
 - decisions: List of decisions made in the conversation
 - action_items: List of action items with task and assignee (if mentioned)
 - sentiment: Overall sentiment of the conversation (positive, neutral, or negative)

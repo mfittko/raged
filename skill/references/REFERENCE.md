@@ -12,7 +12,7 @@ No authentication required.
 
 ### POST /ingest
 
-Chunks text, embeds via Ollama, upserts to Qdrant.
+Chunks text, embeds via provider, upserts to Postgres + pgvector.
 
 **Headers:**
 - `Content-Type: application/json`
@@ -34,7 +34,7 @@ Chunks text, embeds via Ollama, upserts to Qdrant.
 ```
 
 **Chunking:** Text is split into ~1800-character chunks on line boundaries.
-Each chunk becomes a separate Qdrant point with ID `<baseId>:<chunkIndex>`.
+Each chunk becomes a separate vector row with ID `<baseId>:<chunkIndex>`.
 
 **Stored payload per chunk:**
 ```json
@@ -95,7 +95,7 @@ Embeds query text, performs vector similarity search.
 | Service | Default URL | Purpose |
 |---------|------------|---------|
 | raged API | `http://localhost:8080` | HTTP gateway |
-| Qdrant | `http://localhost:6333` | Vector database |
+| Postgres | `postgresql://raged:raged@localhost:5432/raged` | Vector database (pgvector) + metadata + queue |
 | Ollama | `http://localhost:11434` | Embedding model |
 
 **Embedding model:** `nomic-embed-text` (768 dimensions, cosine distance)
@@ -104,11 +104,12 @@ Embeds query text, performs vector similarity search.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `QDRANT_URL` | `http://qdrant:6333` | Qdrant connection |
+| `DATABASE_URL` | `postgresql://raged:raged@postgres:5432/raged` | Postgres connection |
 | `OLLAMA_URL` | `http://ollama:11434` | Ollama connection |
-| `QDRANT_COLLECTION` | `docs` | Default collection |
-| `VECTOR_SIZE` | `768` | Embedding dimensions |
-| `DISTANCE` | `Cosine` | Similarity metric |
+| `EMBED_PROVIDER` | `ollama` | Embedding backend (`ollama` or `openai`) |
 | `EMBED_MODEL` | `nomic-embed-text` | Ollama model name |
+| `OPENAI_API_KEY` | _(empty)_ | OpenAI API key (required when `EMBED_PROVIDER=openai`) |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Optional OpenAI-compatible base URL |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model |
 | `PORT` | `8080` | API listen port |
 | `RAGED_API_TOKEN` | _(empty)_ | Bearer token (empty = auth disabled) |

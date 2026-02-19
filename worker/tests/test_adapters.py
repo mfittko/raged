@@ -1,34 +1,35 @@
 """Tests for LLM adapters."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.adapters import get_adapter
 from src.adapters.base import ImageDescription
-from src.adapters.ollama import OllamaAdapter
+from src.adapters.openai import OpenAIAdapter
+from src.adapters.ollama import OllamaAdapter, _normalize_ollama_base_url
+
+
+def _mock_completion_response(content: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+    )
 
 
 @pytest.mark.asyncio
 async def test_ollama_adapter_extract_metadata():
     """Test Ollama adapter metadata extraction."""
-    adapter = OllamaAdapter()
-
-    # Mock the httpx client
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "response": '{"summary": "Test summary", "complexity": "low"}'
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        # Create async context manager mock
+    with patch("openai.AsyncOpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_mock_completion_response(
+                '{"summary": "Test summary", "complexity": "low"}'
+            )
+        )
+        mock_openai.return_value = mock_client
 
+        adapter = OllamaAdapter()
         schema = {
             "type": "object",
             "properties": {
@@ -39,54 +40,42 @@ async def test_ollama_adapter_extract_metadata():
 
         result = await adapter.extract_metadata("test code", "code", schema)
 
-        assert "summary" in result
-        assert "complexity" in result
+        assert result["summary"] == "Test summary"
+        assert result["complexity"] == "low"
 
 
 @pytest.mark.asyncio
 async def test_ollama_adapter_extract_entities():
     """Test Ollama adapter entity extraction."""
-    adapter = OllamaAdapter()
-
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "response": (
+    with patch("openai.AsyncOpenAI") as mock_openai:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_mock_completion_response(
                 '{"entities": [{"name": "TestClass", "type": "class", '
                 '"description": "A test class"}], "relationships": []}'
             )
-        }
-        mock_response.raise_for_status = MagicMock()
+        )
+        mock_openai.return_value = mock_client
 
-        # Create async context manager mock
-        mock_client = MagicMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        adapter = OllamaAdapter()
         result = await adapter.extract_entities("test text")
 
         assert "entities" in result
         assert "relationships" in result
-        assert isinstance(result["entities"], list)
+        assert result["entities"][0]["name"] == "TestClass"
 
 
 @pytest.mark.asyncio
 async def test_ollama_adapter_is_available():
     """Test Ollama availability check."""
-    adapter = OllamaAdapter()
-
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-
-        # Create async context manager mock
+    with patch("openai.AsyncOpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_mock_completion_response("{}")
+        )
+        mock_openai.return_value = mock_client
 
+        adapter = OllamaAdapter()
         result = await adapter.is_available()
 
         assert result is True
@@ -95,15 +84,14 @@ async def test_ollama_adapter_is_available():
 @pytest.mark.asyncio
 async def test_ollama_adapter_is_not_available():
     """Test Ollama availability check when service is down."""
-    adapter = OllamaAdapter()
-
-    with patch("httpx.AsyncClient") as mock_client_class:
-        # Create async context manager mock that raises exception
+    with patch("openai.AsyncOpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.get = AsyncMock(side_effect=Exception("Connection error"))
-        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=RuntimeError("Connection error")
+        )
+        mock_openai.return_value = mock_client
 
+        adapter = OllamaAdapter()
         result = await adapter.is_available()
 
         assert result is False
@@ -112,25 +100,17 @@ async def test_ollama_adapter_is_not_available():
 @pytest.mark.asyncio
 async def test_ollama_adapter_describe_image():
     """Test Ollama image description."""
-    adapter = OllamaAdapter()
-
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "response": (
-                '{"description": "A test image", '
-                '"detected_objects": ["object1"], "ocr_text": "", "image_type": "photo"}'
-            )
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        # Create async context manager mock
+    with patch("openai.AsyncOpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_mock_completion_response(
+                '{"description": "A test image", "detected_objects": ["object1"], '
+                '"ocr_text": "", "image_type": "photo"}'
+            )
+        )
+        mock_openai.return_value = mock_client
 
+        adapter = OllamaAdapter()
         result = await adapter.describe_image("base64imagedata", "test context")
 
         assert isinstance(result, ImageDescription)
@@ -154,49 +134,35 @@ def test_get_adapter_ollama():
 
 @pytest.mark.asyncio
 async def test_ollama_adapter_handles_invalid_json():
-    """Test Ollama adapter handles invalid JSON gracefully."""
-    adapter = OllamaAdapter()
-
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"response": "invalid json{{{"}
-        mock_response.raise_for_status = MagicMock()
-
-        # Create async context manager mock
+    """Test adapter handles invalid JSON gracefully."""
+    with patch("openai.AsyncOpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_mock_completion_response("invalid json{{{")
+        )
+        mock_openai.return_value = mock_client
 
+        adapter = OllamaAdapter()
         schema = {"type": "object", "properties": {"summary": {"type": "string"}}}
-
         result = await adapter.extract_metadata("test", "code", schema)
 
-        # Should return empty structure rather than crashing
         assert isinstance(result, dict)
-        assert "summary" in result
+        assert result["summary"] == ""
 
 
 @pytest.mark.asyncio
 async def test_ollama_adapter_with_custom_prompt():
-    """Test Ollama adapter uses custom prompt template when provided."""
-    adapter = OllamaAdapter()
-
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "response": '{"summary": "Custom prompt result", "topics": ["AI", "ML"]}'
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        # Create async context manager mock
+    """Test adapter uses custom prompt template when provided."""
+    with patch("openai.AsyncOpenAI") as mock_openai:
         mock_client = MagicMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_mock_completion_response(
+                '{"summary": "Custom prompt result", "topics": ["AI", "ML"]}'
+            )
+        )
+        mock_openai.return_value = mock_client
 
+        adapter = OllamaAdapter()
         schema = {
             "type": "object",
             "properties": {"summary": {"type": "string"}, "topics": {"type": "array"}},
@@ -205,16 +171,45 @@ async def test_ollama_adapter_with_custom_prompt():
         custom_prompt = "Analyze this article and extract: {fields}"
         result = await adapter.extract_metadata("article text", "article", schema, custom_prompt)
 
-        # Verify the custom prompt was used (check the mock was called)
-        assert mock_client.post.called
-        call_args = mock_client.post.call_args
-        request_json = call_args[1]["json"]
+        assert mock_client.chat.completions.create.called
+        request_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert "Analyze this article" in request_kwargs["messages"][1]["content"]
+        assert result["summary"] == "Custom prompt result"
 
-        # Verify custom prompt template was incorporated
-        assert "prompt" in request_json
-        assert "Analyze this article" in request_json["prompt"]
 
-        # Verify result structure
-        assert isinstance(result, dict)
-        assert "summary" in result
-        assert "topics" in result
+@pytest.mark.asyncio
+async def test_openai_adapter_falls_back_when_json_mode_unsupported():
+    """OpenAI-compatible adapter retries without JSON mode when unsupported."""
+    with patch("openai.AsyncOpenAI") as mock_openai:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=[
+                RuntimeError("response_format not supported"),
+                _mock_completion_response("```json\n{\"summary\":\"Recovered\"}\n```"),
+            ]
+        )
+        mock_openai.return_value = mock_client
+
+        adapter = OpenAIAdapter(base_url="http://localhost:11434/v1", api_key="test")
+        schema = {"type": "object", "properties": {"summary": {"type": "string"}}}
+
+        result = await adapter.extract_metadata("test", "text", schema)
+
+        assert result["summary"] == "Recovered"
+        assert mock_client.chat.completions.create.await_count == 2
+
+
+def test_ollama_adapter_normalizes_base_url():
+    """Ollama base URL is always OpenAI-compatible (/v1)."""
+    assert _normalize_ollama_base_url("http://localhost:11434") == "http://localhost:11434/v1"
+    assert _normalize_ollama_base_url("http://localhost:11434/") == "http://localhost:11434/v1"
+    assert _normalize_ollama_base_url("http://localhost:11434/v1") == "http://localhost:11434/v1"
+
+
+def test_ollama_adapter_prefers_explicit_ollama_api_key():
+    """Ollama adapter prefers OLLAMA_API_KEY over OPENAI_API_KEY."""
+    with patch("src.adapters.ollama.OLLAMA_API_KEY", "ollama-token"):
+        with patch("src.adapters.ollama.OPENAI_API_KEY", "openai-token"):
+            with patch("openai.AsyncOpenAI") as mock_openai:
+                OllamaAdapter()
+                assert mock_openai.call_args.kwargs["api_key"] == "ollama-token"

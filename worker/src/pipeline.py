@@ -14,6 +14,91 @@ logger = logging.getLogger(__name__)
 adapter = get_adapter()
 
 
+def _ensure_invoice_date_in_summary(summary: str, invoice_date: str) -> str:
+    """Ensure invoice summaries include invoice date when available."""
+    normalized_summary = str(summary).strip()
+    normalized_date = str(invoice_date).strip()
+
+    if not normalized_summary or not normalized_date:
+        return normalized_summary
+
+    if normalized_date.lower() in normalized_summary.lower():
+        return normalized_summary
+
+    separator = " " if normalized_summary.endswith(('.', '!', '?')) else ". "
+    return f"{normalized_summary}{separator}Invoice date: {normalized_date}."
+
+
+def _ensure_invoice_identifier_in_summary(summary: str, invoice_identifier: str) -> str:
+    """Ensure invoice summaries include invoice identifier when available."""
+    normalized_summary = str(summary).strip()
+    normalized_identifier = str(invoice_identifier).strip()
+
+    if not normalized_summary or not normalized_identifier:
+        return normalized_summary
+
+    if normalized_identifier.lower() in normalized_summary.lower():
+        return normalized_summary
+
+    separator = " " if normalized_summary.endswith(('.', '!', '?')) else ". "
+    return f"{normalized_summary}{separator}Invoice identifier: {normalized_identifier}."
+
+
+def _normalize_tier3_metadata(tier3_meta: dict) -> dict:
+    """Normalize tier-3 metadata to always include multi-level summaries and keywords."""
+    summary_short = str(tier3_meta.get("summary_short") or "").strip()
+    summary_medium = str(tier3_meta.get("summary_medium") or "").strip()
+    summary_long = str(tier3_meta.get("summary_long") or "").strip()
+    summary_legacy = str(tier3_meta.get("summary") or "").strip()
+
+    if not summary_medium:
+        summary_medium = summary_legacy or summary_short or summary_long
+    if not summary_short:
+        summary_short = summary_medium or summary_long
+    if not summary_long:
+        summary_long = summary_medium or summary_short
+
+    invoice_value = tier3_meta.get("invoice")
+    if isinstance(invoice_value, dict):
+        is_invoice = bool(invoice_value.get("is_invoice"))
+        invoice_date = str(invoice_value.get("invoice_date") or "").strip()
+        invoice_identifier = str(invoice_value.get("invoice_identifier") or "").strip()
+        invoice_number = str(invoice_value.get("invoice_number") or "").strip()
+
+        if not invoice_identifier and invoice_number:
+            invoice_identifier = invoice_number
+            invoice_value["invoice_identifier"] = invoice_identifier
+        if not invoice_number and invoice_identifier:
+            invoice_value["invoice_number"] = invoice_identifier
+
+        if is_invoice and invoice_date:
+            summary_short = _ensure_invoice_date_in_summary(summary_short, invoice_date)
+            summary_medium = _ensure_invoice_date_in_summary(summary_medium, invoice_date)
+            summary_long = _ensure_invoice_date_in_summary(summary_long, invoice_date)
+        if is_invoice and invoice_identifier:
+            summary_short = _ensure_invoice_identifier_in_summary(summary_short, invoice_identifier)
+            summary_medium = _ensure_invoice_identifier_in_summary(summary_medium, invoice_identifier)
+            summary_long = _ensure_invoice_identifier_in_summary(summary_long, invoice_identifier)
+
+    keywords_value = tier3_meta.get("keywords")
+    if isinstance(keywords_value, list):
+        keywords = [str(value).strip() for value in keywords_value if str(value).strip()]
+    else:
+        keywords = []
+
+    if not keywords:
+        key_entities = tier3_meta.get("key_entities")
+        if isinstance(key_entities, list):
+            keywords = [str(value).strip() for value in key_entities if str(value).strip()]
+
+    tier3_meta["summary_short"] = summary_short
+    tier3_meta["summary_medium"] = summary_medium
+    tier3_meta["summary_long"] = summary_long
+    tier3_meta["summary"] = summary_medium
+    tier3_meta["keywords"] = keywords
+    return tier3_meta
+
+
 async def process_task(task: dict) -> None:
     """Process a single enrichment task through the full pipeline.
 
@@ -163,12 +248,13 @@ async def run_document_level_extraction(
         tier3_meta = await adapter.extract_metadata(
             full_text, doc_type, schema_dict, prompt_template
         )
+        tier3_meta = _normalize_tier3_metadata(tier3_meta)
 
         # Entity + relationship extraction
         entity_result = await adapter.extract_entities(full_text)
 
         # Extract summary
-        summary = tier3_meta.get("summary", "")
+        summary = str(tier3_meta.get("summary_medium") or tier3_meta.get("summary") or "")
 
         # Format entities for API
         entities = []

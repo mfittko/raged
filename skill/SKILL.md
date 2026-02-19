@@ -27,7 +27,7 @@ metadata:
 
 Store any content and retrieve it via natural-language queries, enriched with metadata extraction and knowledge graph relationships.
 
-raged chunks text, embeds it with a local model (Ollama + nomic-embed-text), stores vectors in Qdrant, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds a Neo4j knowledge graph for entity-aware retrieval.
+raged chunks text, embeds it with a local model (Ollama/OpenAI-compatible providers), stores vectors in Postgres + pgvector, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds entity relationships in Postgres for graph-aware retrieval.
 
 Content types: source code, markdown docs, blog articles, email threads, PDFs, images, YouTube transcripts, meeting notes, Slack exports, or any text.
 
@@ -35,7 +35,7 @@ Content types: source code, markdown docs, blog articles, email threads, PDFs, i
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `RAGED_URL` | Base URL of the raged API | `http://localhost:8080` |
+| `RAGED_URL` | Base URL of the raged API | `http://localhost:39180` |
 | `RAGED_TOKEN` | Bearer token (omit if auth is disabled) | `my-secret-token` |
 
 ## Pre-flight: Check Connection
@@ -56,8 +56,8 @@ node scripts/check-connection.mjs "$RAGED_URL"
 If the health check fails, remind the user to start the stack:
 
 ```bash
-docker compose up -d   # base stack (Qdrant, Ollama, API)
-docker compose --profile enrichment up -d   # full stack with Redis, Neo4j, worker
+POSTGRES_HOST_PORT=26532 API_HOST_PORT=39180 docker compose up -d postgres api
+POSTGRES_HOST_PORT=26532 API_HOST_PORT=39180 docker compose --profile enrichment up -d enrichment-worker
 ```
 
 ## Querying the Knowledge Base
@@ -151,13 +151,13 @@ Combine multiple filters (AND logic) by adding entries to the `must` array.
 |-------|------|---------|-------------|
 | `query` | string | **required** | Natural-language search text |
 | `topK` | number | `8` | Number of results to return |
-| `collection` | string | `docs` | Qdrant collection to search |
-| `filter` | object | _(none)_ | Qdrant filter with `must` array |
-| `graphExpand` | boolean | `false` | Enable graph-based entity expansion (requires Neo4j) |
+| `collection` | string | `docs` | Collection to search |
+| `filter` | object | _(none)_ | Structured filter with `must` array |
+| `graphExpand` | boolean | `false` | Enable graph-based entity expansion |
 
 ### Query with Graph Expansion
 
-When Neo4j is enabled, queries can expand results to include related entities from the knowledge graph:
+When graph expansion is enabled, queries can include related entities from relationships stored in Postgres:
 
 ```bash
 curl -s -X POST "$RAGED_URL/query" \
@@ -215,7 +215,7 @@ Results are ordered by similarity score (highest first). `score` ranges 0.0–1.
 
 ## Ingesting Content
 
-Ingest any text into the knowledge base. raged chunks it, embeds each chunk, and stores vectors in Qdrant.
+Ingest any text into the knowledge base. raged chunks it, embeds each chunk, and stores vectors in Postgres + pgvector.
 
 ### Via the API (any text content)
 
@@ -247,15 +247,11 @@ You can ingest multiple items in a single request. Use any metadata keys that he
 
 ### Via the CLI (bulk Git repository indexing)
 
-For indexing entire Git repositories, the CLI automates cloning, scanning, batching, and filtering. From the raged repo:
+For indexing entire Git repositories, the CLI automates cloning, scanning, batching, and filtering:
 
 ```bash
-cd cli && npm install && npm run build
-
-node dist/index.js index \
+raged index \
   --repo https://github.com/org/repo.git \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN" \
   --collection docs
 ```
 
@@ -265,7 +261,7 @@ node dist/index.js index \
 |------|------|---------|-------------|
 | `--repo`, `-r` | string | **required** | Git URL to clone |
 | `--api` | string | `http://localhost:8080` | raged API URL |
-| `--collection` | string | `docs` | Target Qdrant collection |
+| `--collection` | string | `docs` | Target collection |
 | `--branch` | string | _(default)_ | Branch to clone |
 | `--repoId` | string | _(repo URL)_ | Stable identifier for the repo |
 | `--token` | string | _(from env)_ | Bearer token |
@@ -283,21 +279,70 @@ For ingesting PDFs, images, Slack exports, or other non-repo content:
 
 ```bash
 # Ingest a single PDF
-node dist/index.js ingest \
+raged ingest \
   --file path/to/document.pdf \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN" \
   --collection docs
 
 # Ingest all files in a directory
-node dist/index.js ingest \
+raged ingest \
   --dir path/to/content/ \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN" \
   --collection docs
 ```
 
 Supported file types: text, code, PDFs (extracted text), images (base64 + EXIF metadata), Slack JSON exports.
+
+### Via the CLI (batch URL ingestion with quality check)
+
+Ingest a list of URLs (e.g. bookmarks) with an optional OpenAI-based content quality pre-filter:
+
+```bash
+# Ingest URLs from a file, skipping unreachable or low-quality pages
+raged ingest \
+  --urls-file /tmp/bookmarks.txt \
+  --url-check \
+  --collection bookmarks
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--urls-file <path>` | string | — | File with one URL per line (`#` comments allowed) |
+| `--url-check` | boolean | `false` | Pre-filter URLs via OpenAI (checks reachability + content quality) |
+| `--url-check-model <model>` | string | `gpt-4o-mini` | OpenAI model for the quality check |
+
+### Extracting Chrome Bookmarks
+
+The skill ships a helper script to export Google Chrome bookmarks as a URL list:
+
+```bash
+# Export all bookmarks to a file
+node skill/scripts/extract-chrome-bookmarks.mjs -o /tmp/bookmarks.txt
+
+# Export only bookmarks from a specific folder
+node skill/scripts/extract-chrome-bookmarks.mjs -f "Dev Tools" -o /tmp/dev-bookmarks.txt
+
+# Export with names (URL\tName format)
+node skill/scripts/extract-chrome-bookmarks.mjs --with-names
+
+# Use a non-default Chrome profile
+node skill/scripts/extract-chrome-bookmarks.mjs --profile "Profile 1" -o /tmp/bookmarks.txt
+
+# Extract + ingest + update existing entries in one step
+node skill/scripts/extract-chrome-bookmarks.mjs \
+  --ingest \
+  --update \
+  --collection bookmarks \
+  --api "$RAGED_URL"
+```
+
+Full workflow — extract bookmarks, quality-filter, and ingest:
+
+```bash
+node skill/scripts/extract-chrome-bookmarks.mjs -o /tmp/bookmarks.txt
+raged ingest \
+  --urls-file /tmp/bookmarks.txt \
+  --url-check \
+  --collection bookmarks
+```
 
 ### Ingest Request Schema
 
@@ -314,80 +359,37 @@ Supported file types: text, code, PDFs (extracted text), images (base64 + EXIF m
 
 ## Enrichment
 
-When enrichment is enabled (Redis + Neo4j + worker running), raged performs async metadata extraction:
+When enrichment is enabled (`ENRICHMENT_ENABLED=true` with the worker running), raged performs async metadata extraction:
 
 - **Tier-1** (sync): Heuristic/AST/EXIF extraction during ingest
 - **Tier-2** (async): spaCy NER, keyword extraction, language detection
 - **Tier-3** (async): LLM-based summaries and entity extraction
 
-### Check Enrichment Status
-
-```bash
-# Get status for a specific document
-curl -s "$RAGED_URL/enrichment/status/my-repo:src/auth.ts?collection=docs" \
-  -H "Authorization: Bearer $RAGED_TOKEN" | jq .
-```
-
-Response:
-```json
-{
-  "status": "enriched",
-  "chunks": { "total": 3, "enriched": 3, "pending": 0, "processing": 0, "failed": 0, "none": 0 },
-  "extractedAt": "2026-02-14T10:05:00Z",
-  "metadata": {
-    "tier2": { "entities": [...], "keywords": [...], "language": "en" },
-    "tier3": { "summary": "...", "entities": [...] }
-  }
-}
-```
-
 ### Get Enrichment Stats
 
 ```bash
-# System-wide enrichment statistics
-curl -s "$RAGED_URL/enrichment/stats" \
-  -H "Authorization: Bearer $RAGED_TOKEN" | jq .
-```
-
-Via CLI:
-```bash
-node dist/index.js enrich --show-failed \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN"
+raged enrich --stats
 ```
 
 ### Trigger Enrichment
 
 ```bash
-# Enqueue pending items for enrichment
-curl -s -X POST "$RAGED_URL/enrichment/enqueue" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d '{"collection": "docs", "force": false}' | jq .
+# Trigger enrichment for pending items
+raged enrich
 
 # Force re-enrichment of all items
-curl -s -X POST "$RAGED_URL/enrichment/enqueue" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAGED_TOKEN" \
-  -d '{"collection": "docs", "force": true}' | jq .
-```
+raged enrich --force
 
-Via CLI:
-```bash
-# Trigger enrichment for pending items
-node dist/index.js enrich \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN"
+# Re-enrich invoice-like content only
+raged enrich --force --filter invoice
 
-# Force re-enrichment
-node dist/index.js enrich --force \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN"
+# Clear queued invoice-like enrichment tasks
+raged enrich --clear --filter invoice
 ```
 
 ## Knowledge Graph
 
-When Neo4j is enabled, raged builds a knowledge graph of entities and relationships extracted from documents.
+raged builds a knowledge graph from entities and relationships stored in Postgres.
 
 ### Query Entity
 
@@ -418,9 +420,7 @@ Response:
 
 Via CLI:
 ```bash
-node dist/index.js graph --entity "AuthService" \
-  --api "$RAGED_URL" \
-  --token "$RAGED_TOKEN"
+raged graph --entity "AuthService"
 ```
 
 Output:

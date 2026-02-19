@@ -6,7 +6,7 @@ import TurndownService from "turndown";
 export interface ExtractionResult {
   text: string | null;        // null for unsupported types
   title?: string;             // from HTML/PDF metadata
-  strategy: "readability" | "passthrough" | "pdf-parse" | "metadata-only" | "turndown" | "plaintext";
+  strategy: "readability" | "passthrough" | "pdf-parse" | "metadata-only";
   contentType: string;
 }
 
@@ -71,11 +71,10 @@ export function extractContent(body: Buffer, contentType: string): ExtractionRes
       // Fallback if Readability fails
       const bodyMarkdown = toMarkdown(dom.window.document.body?.innerHTML);
       const bodyText = dom.window.document.body?.textContent?.trim() || null;
-      const usedMarkdown = bodyMarkdown.length > 0;
 
       return {
         text: bodyMarkdown || bodyText,
-        strategy: usedMarkdown ? "turndown" : "plaintext",
+        strategy: "readability",
         contentType: normalized,
       };
     } catch (error) {

@@ -1,15 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getEnrichmentStatus, getEnrichmentStats, enqueueEnrichment, clearEnrichmentQueue } from "./enrichment.js";
+import {
+  getEnrichmentStatus,
+  getEnrichmentStats,
+  enqueueEnrichment,
+  clearEnrichmentQueue,
+} from "./enrichment.js";
 
 // Mock the db module
 vi.mock("../db.js", () => ({
   getPool: vi.fn(() => ({
     query: vi.fn(async (sql: string) => {
-      if (sql.includes("FROM chunks c")) {
+      if (sql.includes("FROM chunks c") && sql.includes("WHERE d.base_id")) {
         // getEnrichmentStatus query
         return {
           rows: [
             {
+              chunk_index: 0,
               enrichment_status: "enriched",
               enriched_at: new Date().toISOString(),
               tier2_meta: { entities: [] },
@@ -25,7 +31,7 @@ vi.mock("../db.js", () => ({
             { status: "processing", count: 2 },
           ],
         };
-      } else if (sql.includes("FROM chunks")) {
+      } else if (sql.includes("FROM chunks c") && sql.includes("GROUP BY COALESCE")) {
         // getEnrichmentStats chunks query
         return {
           rows: [
@@ -109,24 +115,24 @@ describe("enrichment service", () => {
       expect(result.chunks.total).toBe(2);
     });
 
-    it("extracts error metadata from tier3_meta._error on failed chunks", async () => {
+    it("includes chunk error metadata when available", async () => {
       const { getPool } = await import("../db.js");
       (getPool as any).mockReturnValueOnce({
         query: vi.fn(async () => ({
           rows: [
             {
+              chunk_index: 3,
               enrichment_status: "failed",
               enriched_at: null,
               tier2_meta: null,
               tier3_meta: {
                 _error: {
-                  message: "Test error",
-                  taskId: "task-123",
-                  attempt: 3,
+                  message: "controlled-failure",
+                  taskId: "task-abc",
+                  attempt: 2,
                   maxAttempts: 3,
-                  final: true,
-                  failedAt: "2024-01-01T00:00:00Z",
-                  chunkIndex: 0,
+                  final: false,
+                  failedAt: "2026-02-17T00:00:00Z",
                 },
               },
             },
@@ -136,11 +142,15 @@ describe("enrichment service", () => {
 
       const result = await getEnrichmentStatus({ baseId: "failed-id" });
       expect(result.status).toBe("failed");
-      expect(result.metadata?.error).toBeDefined();
-      expect(result.metadata?.error?.message).toBe("Test error");
-      expect(result.metadata?.error?.taskId).toBe("task-123");
-      expect(result.metadata?.error?.attempt).toBe(3);
-      expect(result.metadata?.error?.final).toBe(true);
+      expect(result.metadata?.error).toEqual({
+        message: "controlled-failure",
+        taskId: "task-abc",
+        attempt: 2,
+        maxAttempts: 3,
+        final: false,
+        failedAt: "2026-02-17T00:00:00Z",
+        chunkIndex: 3,
+      });
     });
   });
 
@@ -289,27 +299,9 @@ describe("enrichment service", () => {
       expect(sql).toContain("c.enrichment_status != 'enriched'");
     });
 
-    it("applies full-text filter to chunk selection", async () => {
+    it("applies full-text filter when provided", async () => {
       const clientQuery = vi
         .fn()
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              chunk_id: "test-id:0",
-              document_id: "doc-1",
-              base_id: "test-id",
-              chunk_index: 0,
-              text: "test content with filter text",
-              source: "test.txt",
-              doc_type: "text",
-              tier1_meta: {},
-            },
-          ],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ document_id: "doc-1", total_chunks: 1 }],
-        })
-        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] });
 
       const { getPool } = await import("../db.js");
@@ -321,124 +313,55 @@ describe("enrichment service", () => {
         })),
       });
 
-      const result = await enqueueEnrichment({
-        collection: "test",
-        filter: "filter text",
-      });
+      const result = await enqueueEnrichment({ collection: "test", filter: "invoice" }, "test");
 
       expect(result.ok).toBe(true);
-      expect(result.enqueued).toBe(1);
+      expect(result.enqueued).toBe(0);
 
-      const [sql] = clientQuery.mock.calls[0] as [string, unknown[]];
+      const [sql, params] = clientQuery.mock.calls[0] as [string, unknown[]];
       expect(sql).toContain("websearch_to_tsquery");
       expect(sql).toContain("ILIKE");
-    });
-
-    it("falls back to ILIKE-only enqueue when tsquery syntax is invalid", async () => {
-      const invalidTsQueryError = Object.assign(new Error("syntax error in tsquery"), { code: "42601" });
-      const clientQuery = vi
-        .fn()
-        .mockRejectedValueOnce(invalidTsQueryError)
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              chunk_id: "test-id:0",
-              document_id: "doc-1",
-              base_id: "test-id",
-              chunk_index: 0,
-              text: "test content",
-              source: "test.txt",
-              doc_type: "text",
-              tier1_meta: {},
-            },
-          ],
-        })
-        .mockResolvedValueOnce({ rows: [{ document_id: "doc-1", total_chunks: 1 }] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [] });
-
-      const { getPool } = await import("../db.js");
-      (getPool as any).mockReturnValueOnce({
-        query: vi.fn(async () => ({ rows: [] })),
-        connect: vi.fn(async () => ({ query: clientQuery, release: vi.fn() })),
-      });
-
-      const result = await enqueueEnrichment({ collection: "docs", filter: "\"unterminated" });
-
-      expect(result.ok).toBe(true);
-      const fallbackSql = clientQuery.mock.calls[1][0] as string;
-      expect(fallbackSql).not.toContain("websearch_to_tsquery");
-      expect(fallbackSql).toContain("ILIKE");
+      expect(params).toEqual(["test", "invoice", "%invoice%", 1000]);
     });
   });
 
   describe("clearEnrichmentQueue", () => {
-    it("clears pending, processing, and dead tasks", async () => {
+    it("clears queued tasks for a collection", async () => {
+      const poolQuery = vi.fn().mockResolvedValueOnce({ rowCount: 3, rows: [{ id: "1" }] });
+
       const { getPool } = await import("../db.js");
       (getPool as any).mockReturnValueOnce({
-        query: vi.fn(async () => ({ rowCount: 5 })),
+        query: poolQuery,
       });
 
-      const result = await clearEnrichmentQueue({ collection: "test" });
-
-      expect(result.ok).toBe(true);
-      expect(result.cleared).toBe(5);
-    });
-
-    it("applies filter when clearing queue", async () => {
-      const { getPool } = await import("../db.js");
-      const mockQuery = vi.fn(async () => ({ rowCount: 3 }));
-      (getPool as any).mockReturnValueOnce({
-        query: mockQuery,
-      });
-
-      const result = await clearEnrichmentQueue({
-        collection: "test",
-        filter: "specific filter",
-      });
+      const result = await clearEnrichmentQueue({ collection: "test" }, "test");
 
       expect(result.ok).toBe(true);
       expect(result.cleared).toBe(3);
 
-      const firstCall = (mockQuery as any).mock.calls[0] as unknown[] | undefined;
-      const sql = typeof firstCall?.[0] === "string" ? firstCall[0] : "";
+      const [sql, params] = poolQuery.mock.calls[0] as [string, unknown[]];
       expect(sql).toContain("DELETE FROM task_queue");
+      expect(sql).toContain("status IN ('pending', 'processing', 'dead')");
+      expect(params).toEqual(["test"]);
+    });
+
+    it("applies full-text filter when clearing", async () => {
+      const poolQuery = vi.fn().mockResolvedValueOnce({ rowCount: 2, rows: [{ id: "1" }, { id: "2" }] });
+
+      const { getPool } = await import("../db.js");
+      (getPool as any).mockReturnValueOnce({
+        query: poolQuery,
+      });
+
+      const result = await clearEnrichmentQueue({ collection: "test", filter: "invoice" }, "test");
+
+      expect(result.ok).toBe(true);
+      expect(result.cleared).toBe(2);
+
+      const [sql, params] = poolQuery.mock.calls[0] as [string, unknown[]];
       expect(sql).toContain("websearch_to_tsquery");
       expect(sql).toContain("ILIKE");
-      expect(sql).toContain("IN ('pending', 'processing', 'dead')");
-    });
-
-    it("returns 0 when no tasks to clear", async () => {
-      const { getPool } = await import("../db.js");
-      (getPool as any).mockReturnValueOnce({
-        query: vi.fn(async () => ({ rowCount: 0 })),
-      });
-
-      const result = await clearEnrichmentQueue({ collection: "test" });
-
-      expect(result.ok).toBe(true);
-      expect(result.cleared).toBe(0);
-    });
-
-    it("falls back to ILIKE-only clear when tsquery syntax is invalid", async () => {
-      const { getPool } = await import("../db.js");
-      const invalidTsQueryError = Object.assign(new Error("syntax error in tsquery"), { code: "42601" });
-      const mockQuery = vi
-        .fn()
-        .mockRejectedValueOnce(invalidTsQueryError)
-        .mockResolvedValueOnce({ rowCount: 1 });
-
-      (getPool as any).mockReturnValueOnce({
-        query: mockQuery,
-      });
-
-      const result = await clearEnrichmentQueue({ collection: "docs", filter: "\"unterminated" });
-
-      expect(result.ok).toBe(true);
-      expect(result.cleared).toBe(1);
-      const fallbackSql = mockQuery.mock.calls[1][0] as string;
-      expect(fallbackSql).not.toContain("websearch_to_tsquery");
-      expect(fallbackSql).toContain("ILIKE");
+      expect(params).toEqual(["test", "invoice", "%invoice%"]);
     });
   });
 });

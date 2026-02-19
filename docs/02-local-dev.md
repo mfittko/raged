@@ -9,16 +9,14 @@ sequenceDiagram
     participant U as Developer
     participant DC as Docker Compose
     participant PG as Postgres
-    participant OL as Ollama
     participant API as RAG API
     participant WK as Worker
 
     U->>DC: docker compose up -d
     DC->>PG: Start (port 5432)
-    DC->>OL: Start (port 11434)
     DC->>API: Start (port 8080)
     API->>PG: Connect
-    API->>OL: Connect
+    API->>API: Use OpenAI embeddings by default
     
     Note over U,WK: For enrichment stack:
     U->>DC: docker compose --profile enrichment up -d
@@ -36,15 +34,15 @@ sequenceDiagram
 ### Base Stack (Vector Search Only)
 
 ```bash
-# 1. Start core services (Postgres, Ollama, API)
+# 1. Start core services (Postgres, API)
 docker compose up -d
 
 # 2. Verify the API is running
 curl -s http://localhost:8080/healthz
 # → {"ok":true}
 
-# 3. Pull the embedding model (first time only)
-curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'
+# 3. Ensure OPENAI_API_KEY is configured in .env
+grep -n '^OPENAI_API_KEY=' .env
 ```
 
 ### Full Stack (with Enrichment & Knowledge Graph)
@@ -57,15 +55,12 @@ docker compose --profile enrichment up -d
 curl -s http://localhost:8080/healthz
 # → {"ok":true}
 
-# 3. Pull the embedding model (first time only)
-curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'
-
-# 4. (Optional) Pull LLM for tier-3 extraction
-curl http://localhost:11434/api/pull -d '{"name":"llama3"}'
-
-# 5. Verify enrichment is enabled
+# 3. Verify enrichment is enabled
 curl -s http://localhost:8080/enrichment/stats
 # → {"queue":{"pending":0,...},"totals":{...}}
+
+# Optional: run Ollama only when needed
+docker compose --profile ollama up -d ollama
 ```
 
 ## Services
@@ -76,7 +71,6 @@ curl -s http://localhost:8080/enrichment/stats
 |---------|------|---------|
 | `api` | 8080 | RAG API (Fastify) |
 | `postgres` | 5432 | Vector database (with pgvector extension) |
-| `ollama` | 11434 | Embedding model runtime |
 
 ### Enrichment Stack (--profile enrichment)
 
@@ -110,13 +104,19 @@ environment:
 ```yaml
 environment:
   DATABASE_URL: "postgresql://raged:password@postgres:5432/raged"
-  OLLAMA_URL: "http://ollama:11434"
   WORKER_CONCURRENCY: "4"  # Number of concurrent tasks
-  EXTRACTOR_PROVIDER: "ollama"  # Options: ollama, anthropic, openai
-  EXTRACTOR_MODEL_FAST: "llama3"  # Fast model for quick extraction
-  EXTRACTOR_MODEL_CAPABLE: "llama3"  # Capable model for complex extraction
-  EXTRACTOR_MODEL_VISION: "llava"  # Vision model for image inputs
+  EXTRACTOR_PROVIDER: "openai"  # openai, anthropic, or ollama
+  OPENAI_BASE_URL: "https://api.openai.com/v1"  # Any OpenAI-compatible /v1 endpoint
+  OPENAI_API_KEY: ""  # Required for OpenAI cloud
+  EXTRACTOR_MODEL_FAST: "gpt-4.1-mini"  # Fast model for quick extraction
+  EXTRACTOR_MODEL_CAPABLE: "gpt-4.1-mini"  # Capable model for complex extraction
+  EXTRACTOR_MODEL_VISION: "gpt-4.1-mini"  # Vision model for image inputs
+  EXTRACTOR_MAX_OUTPUT_TOKENS: "16384"  # Increase for longer summaries/keywords
 ```
+
+All extraction adapters use OpenAI-compatible chat completions. For direct provider
+swaps, set `EXTRACTOR_PROVIDER=openai` and point `OPENAI_BASE_URL` to the target
+compatible endpoint.
 
 ## Tear Down
 
@@ -138,7 +138,7 @@ npm install
 DATABASE_URL=postgresql://raged:password@localhost:5432/raged OLLAMA_URL=http://localhost:11434 npm run dev
 ```
 
-This runs the API directly on your machine while Postgres and Ollama run in Docker.
+This runs the API directly on your machine while Postgres runs in Docker.
 
 ## Developing the CLI
 

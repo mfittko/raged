@@ -1,5 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { cmdIngest } from "./ingest.js";
+import * as utils from "../lib/utils.js";
+import path from "node:path";
+import fs from "node:fs/promises";
+import os from "node:os";
 
 describe("ingest command", () => {
   let fetchMock: typeof globalThis.fetch;
@@ -130,6 +134,28 @@ describe("ingest command", () => {
     globalThis.fetch = fetchMock;
   });
 
+  it("should exit with error when --batchSize is invalid", async () => {
+    const exitSpy = process.exit;
+    let exitCode = 0;
+    process.exit = ((code: number) => {
+      exitCode = code;
+      throw new Error("exit");
+    }) as never;
+
+    try {
+      await cmdIngest({
+        file: "/tmp/example.pdf",
+        docType: "pdf",
+        batchSize: "0",
+      });
+    } catch {
+      // Expected to throw
+    }
+
+    expect(exitCode).toBe(2);
+    process.exit = exitSpy;
+  });
+
   it("should handle URL with no content ingested", async () => {
     const mockResponse = {
       upserted: 0,
@@ -248,5 +274,214 @@ describe("ingest command", () => {
     });
 
     globalThis.fetch = fetchMock;
+  });
+
+  it("should filter directory files by --doc-type before reading content", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "raged-ingest-test-"));
+    const pdfPath = path.join(tempDir, "invoice.pdf");
+    const txtPath = path.join(tempDir, "notes.txt");
+    await fs.writeFile(pdfPath, "placeholder");
+    await fs.writeFile(txtPath, "placeholder");
+
+    const readSpy = vi.spyOn(utils, "readFileContent").mockResolvedValue({ text: "content" });
+
+    globalThis.fetch = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string);
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0].source).toBe("invoice.pdf");
+      expect(body.items[0].docType).toBe("pdf");
+      expect(body.items[0].metadata.rootDir).toBe(tempDir.replace(/\\/g, "/"));
+      expect(body.items[0].metadata.relativePath).toBe("invoice.pdf");
+      expect(body.items[0].metadata.path).toBe("invoice.pdf");
+
+      return new Response(JSON.stringify({ upserted: 1, errors: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    await cmdIngest({ dir: tempDir, docType: "pdf" });
+
+    expect(readSpy).toHaveBeenCalledTimes(1);
+    expect(readSpy).toHaveBeenCalledWith(pdfPath, "pdf");
+
+    readSpy.mockRestore();
+    globalThis.fetch = fetchMock;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("should apply --maxFiles after --doc-type filtering during scan", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "raged-ingest-test-"));
+    const txtA = path.join(tempDir, "a.txt");
+    const txtB = path.join(tempDir, "b.txt");
+    const pdfPath = path.join(tempDir, "c.pdf");
+    await fs.writeFile(txtA, "placeholder");
+    await fs.writeFile(txtB, "placeholder");
+    await fs.writeFile(pdfPath, "placeholder");
+
+    const readSpy = vi.spyOn(utils, "readFileContent").mockResolvedValue({ text: "content" });
+
+    let fetchCalls = 0;
+    globalThis.fetch = async (_url: string | URL | Request, init?: RequestInit) => {
+      fetchCalls += 1;
+      const body = JSON.parse(init?.body as string);
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0].source).toBe("c.pdf");
+      expect(body.items[0].docType).toBe("pdf");
+
+      return new Response(JSON.stringify({ upserted: 1, errors: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    await cmdIngest({ dir: tempDir, docType: "pdf", maxFiles: "1" });
+
+    expect(fetchCalls).toBe(1);
+    expect(readSpy).toHaveBeenCalledTimes(1);
+    expect(readSpy).toHaveBeenCalledWith(pdfPath, "pdf");
+
+    readSpy.mockRestore();
+    globalThis.fetch = fetchMock;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("should split and continue when a batch request returns 413", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "raged-ingest-test-"));
+    const firstPdf = path.join(tempDir, "a.pdf");
+    const secondPdf = path.join(tempDir, "b.pdf");
+    await fs.writeFile(firstPdf, "placeholder");
+    await fs.writeFile(secondPdf, "placeholder");
+
+    const readSpy = vi.spyOn(utils, "readFileContent").mockResolvedValue({ text: "content" });
+
+    let callCount = 0;
+    const seenSources: string[][] = [];
+    globalThis.fetch = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string);
+      const sources = body.items.map((item: { source: string }) => item.source);
+      seenSources.push(sources);
+      callCount += 1;
+
+      if (callCount === 1) {
+        return new Response(JSON.stringify({ error: "Request body is too large" }), {
+          status: 413,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ upserted: 1, errors: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    await cmdIngest({ dir: tempDir, docType: "pdf" });
+
+    expect(callCount).toBe(3);
+    expect(seenSources[0]).toEqual(["a.pdf", "b.pdf"]);
+    expect(seenSources[1]).toEqual(["a.pdf"]);
+    expect(seenSources[2]).toEqual(["b.pdf"]);
+
+    readSpy.mockRestore();
+    globalThis.fetch = fetchMock;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("should respect --batchSize for directory ingestion", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "raged-ingest-test-"));
+    const firstPdf = path.join(tempDir, "a.pdf");
+    const secondPdf = path.join(tempDir, "b.pdf");
+    const thirdPdf = path.join(tempDir, "c.pdf");
+    await fs.writeFile(firstPdf, "placeholder");
+    await fs.writeFile(secondPdf, "placeholder");
+    await fs.writeFile(thirdPdf, "placeholder");
+
+    const readSpy = vi.spyOn(utils, "readFileContent").mockResolvedValue({ text: "content" });
+
+    const batchSizes: number[] = [];
+    globalThis.fetch = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string);
+      batchSizes.push(body.items.length);
+
+      return new Response(JSON.stringify({ upserted: body.items.length, errors: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    await cmdIngest({ dir: tempDir, docType: "pdf", batchSize: "2" });
+
+    expect(batchSizes).toEqual([2, 1]);
+
+    readSpy.mockRestore();
+    globalThis.fetch = fetchMock;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("should skip ignored paths from --ignore", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "raged-ingest-test-"));
+    const keepPdf = path.join(tempDir, "keep.pdf");
+    const ignoredDir = path.join(tempDir, "tmp");
+    const ignoredPdf = path.join(ignoredDir, "skip.pdf");
+    await fs.mkdir(ignoredDir, { recursive: true });
+    await fs.writeFile(keepPdf, "placeholder");
+    await fs.writeFile(ignoredPdf, "placeholder");
+
+    const readSpy = vi.spyOn(utils, "readFileContent").mockResolvedValue({ text: "content" });
+
+    globalThis.fetch = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string);
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0].source).toBe("keep.pdf");
+
+      return new Response(JSON.stringify({ upserted: 1, errors: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    await cmdIngest({ dir: tempDir, docType: "pdf", ignore: "tmp/**" });
+
+    expect(readSpy).toHaveBeenCalledTimes(1);
+    expect(readSpy).toHaveBeenCalledWith(keepPdf, "pdf");
+
+    readSpy.mockRestore();
+    globalThis.fetch = fetchMock;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("should load ignore patterns from --ignore-file", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "raged-ingest-test-"));
+    const keepPdf = path.join(tempDir, "keep.pdf");
+    const ignoredDir = path.join(tempDir, "tmp");
+    const ignoredPdf = path.join(ignoredDir, "skip.pdf");
+    const ignoreFile = path.join(tempDir, ".ingestignore");
+    await fs.mkdir(ignoredDir, { recursive: true });
+    await fs.writeFile(keepPdf, "placeholder");
+    await fs.writeFile(ignoredPdf, "placeholder");
+    await fs.writeFile(ignoreFile, "# comment\ntmp/**\n");
+
+    const readSpy = vi.spyOn(utils, "readFileContent").mockResolvedValue({ text: "content" });
+
+    globalThis.fetch = async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string);
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0].source).toBe("keep.pdf");
+
+      return new Response(JSON.stringify({ upserted: 1, errors: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    await cmdIngest({ dir: tempDir, docType: "pdf", ignoreFile });
+
+    expect(readSpy).toHaveBeenCalledTimes(1);
+    expect(readSpy).toHaveBeenCalledWith(keepPdf, "pdf");
+
+    readSpy.mockRestore();
+    globalThis.fetch = fetchMock;
+    await fs.rm(tempDir, { recursive: true, force: true });
   });
 });

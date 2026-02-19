@@ -88,7 +88,8 @@ enrichment:
         cpu: 1000m
         memory: 1Gi
     extractor:
-      provider: "ollama"
+      provider: "auto"
+      openaiBaseUrl: "https://api.openai.com/v1"
       modelFast: "llama3"
       modelCapable: "llama3"
       modelVision: "llava"

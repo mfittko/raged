@@ -195,3 +195,75 @@ async def test_run_document_level_extraction():
         assert result["relationships"][0]["source"] == "A"
         assert result["relationships"][0]["target"] == "B"
         assert result["relationships"][0]["type"] == "uses"
+
+
+@pytest.mark.asyncio
+async def test_run_document_level_extraction_invoice_summary_includes_date():
+    """Ensure invoice summaries include invoice date when available."""
+    with patch("src.pipeline.adapter") as mock_adapter:
+        mock_adapter.extract_metadata = AsyncMock(
+            return_value={
+                "summary_short": "Invoice from Packt Publishing Ltd to Manuel Fittko for 119.00 EUR incl. 19.00 EUR VAT for Book subscription",
+                "summary_medium": "Invoice INV-2026-001 from Packt Publishing Ltd to Manuel Fittko totals 119.00 EUR incl. VAT for Book subscription.",
+                "summary_long": "Packt Publishing Ltd issued invoice INV-2026-001 to Manuel Fittko for Book subscription with subtotal 100.00 EUR, VAT 19.00 EUR, and total 119.00 EUR.",
+                "invoice": {
+                    "is_invoice": True,
+                    "sender": "Packt Publishing Ltd",
+                    "receiver": "Manuel Fittko",
+                    "invoice_number": "INV-2026-001",
+                    "invoice_date": "2026-02-17",
+                    "currency": "EUR",
+                    "subtotal": "100.00",
+                    "vat_amount": "19.00",
+                    "total_amount": "119.00",
+                },
+            }
+        )
+        mock_adapter.extract_entities = AsyncMock(
+            return_value={"entities": [], "relationships": []}
+        )
+
+        result = await run_document_level_extraction("base-id", "pdf", "test text", 1, "test.pdf")
+
+        tier3 = result["tier3"]
+        assert "2026-02-17" in tier3["summary_short"]
+        assert "2026-02-17" in tier3["summary_medium"]
+        assert "2026-02-17" in tier3["summary_long"]
+        assert "2026-02-17" in result["summary"]
+
+
+@pytest.mark.asyncio
+async def test_run_document_level_extraction_invoice_summary_includes_identifier():
+    """Ensure invoice summaries include invoice identifier and normalize identifier fields."""
+    with patch("src.pipeline.adapter") as mock_adapter:
+        mock_adapter.extract_metadata = AsyncMock(
+            return_value={
+                "summary_short": "Invoice from Packt Publishing Ltd to Manuel Fittko for 119.00 EUR incl. VAT",
+                "summary_medium": "Invoice from Packt Publishing Ltd totals 119.00 EUR.",
+                "summary_long": "Packt Publishing Ltd issued an invoice for Book subscription.",
+                "invoice": {
+                    "is_invoice": True,
+                    "sender": "Packt Publishing Ltd",
+                    "receiver": "Manuel Fittko",
+                    "invoice_number": "INV-2026-001",
+                    "invoice_date": "2026-02-17",
+                    "currency": "EUR",
+                    "subtotal": "100.00",
+                    "vat_amount": "19.00",
+                    "total_amount": "119.00",
+                },
+            }
+        )
+        mock_adapter.extract_entities = AsyncMock(
+            return_value={"entities": [], "relationships": []}
+        )
+
+        result = await run_document_level_extraction("base-id", "pdf", "test text", 1, "test.pdf")
+
+        tier3 = result["tier3"]
+        assert tier3["invoice"]["invoice_identifier"] == "INV-2026-001"
+        assert tier3["invoice"]["invoice_number"] == "INV-2026-001"
+        assert "INV-2026-001" in tier3["summary_short"]
+        assert "INV-2026-001" in tier3["summary_medium"]
+        assert "INV-2026-001" in tier3["summary_long"]
+        assert "INV-2026-001" in result["summary"]

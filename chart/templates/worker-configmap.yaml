@@ -9,6 +9,7 @@ data:
   API_URL: "http://{{ .Release.Name }}-api:{{ .Values.api.service.port }}"
   OLLAMA_URL: "http://{{ .Release.Name }}-ollama:{{ .Values.ollama.service.port }}"
   EXTRACTOR_PROVIDER: "{{ .Values.enrichment.worker.extractor.provider }}"
+  OPENAI_BASE_URL: "{{ .Values.enrichment.worker.extractor.openaiBaseUrl }}"
   EXTRACTOR_MODEL_FAST: "{{ .Values.enrichment.worker.extractor.modelFast }}"
   EXTRACTOR_MODEL_CAPABLE: "{{ .Values.enrichment.worker.extractor.modelCapable }}"
   EXTRACTOR_MODEL_VISION: "{{ .Values.enrichment.worker.extractor.modelVision }}"

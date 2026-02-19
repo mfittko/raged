@@ -7,9 +7,7 @@ describe("validateConfig", () => {
     OLLAMA_URL: process.env.OLLAMA_URL,
     ALLOW_DEV_DB: process.env.ALLOW_DEV_DB,
     EMBED_PROVIDER: process.env.EMBED_PROVIDER,
-    EMBED_MODEL: process.env.EMBED_MODEL,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    OPENAI_EMBEDDING_MODEL: process.env.OPENAI_EMBEDDING_MODEL,
   };
 
   afterEach(() => {
@@ -45,7 +43,6 @@ describe("validateConfig", () => {
   it("returns error when OLLAMA_URL is missing", () => {
     process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
     delete process.env.EMBED_PROVIDER;
-    process.env.EMBED_MODEL = "mxbai-embed-large";
     delete process.env.OLLAMA_URL;
 
     const errors = validateConfig();
@@ -85,7 +82,6 @@ describe("validateConfig", () => {
   it("returns empty array when all required config is present", () => {
     process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
     delete process.env.EMBED_PROVIDER;
-    process.env.EMBED_MODEL = "mxbai-embed-large";
     process.env.OLLAMA_URL = "http://localhost:11434";
 
     const errors = validateConfig();
