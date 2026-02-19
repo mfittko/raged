@@ -1,5 +1,5 @@
 ---
-title: raged Documentation
+title: RAGed Documentation
 ---
 
 # raged Documentation
