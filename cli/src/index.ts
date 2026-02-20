@@ -5,8 +5,12 @@ import { registerQueryCommand } from "./commands/query.js";
 import { registerIngestCommand } from "./commands/ingest.js";
 import { registerEnrichCommand } from "./commands/enrich.js";
 import { registerGraphCommand } from "./commands/graph.js";
+import { registerCollectionsCommand } from "./commands/collections.js";
+import { loadDotEnvFromCwd } from "./lib/env.js";
 
 async function main() {
+  await loadDotEnvFromCwd();
+
   const program = new Command();
   
   program
@@ -20,6 +24,7 @@ async function main() {
   registerIngestCommand(program);
   registerEnrichCommand(program);
   registerGraphCommand(program);
+  registerCollectionsCommand(program);
 
   await program.parseAsync(process.argv);
 }

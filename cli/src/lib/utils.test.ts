@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs/promises";
 import {
   normalizePathForId,
+  deriveIngestSource,
   detectDocType,
   extToLang,
   isTextLike,
@@ -47,6 +48,20 @@ describe("utils", () => {
 
     it("should handle paths with no slashes", () => {
       expect(normalizePathForId("file.txt")).toBe("file.txt");
+    });
+  });
+
+  describe("deriveIngestSource", () => {
+    it("uses basename for single-file ingest", () => {
+      expect(deriveIngestSource("tmp/docs/file.pdf", { singleFile: true })).toBe("file.pdf");
+    });
+
+    it("uses relative path for directory ingest", () => {
+      expect(deriveIngestSource("/repo/content/sub/file.md", { rootDir: "/repo/content" })).toBe("sub/file.md");
+    });
+
+    it("falls back to basename when path is outside rootDir", () => {
+      expect(deriveIngestSource("/other/file.md", { rootDir: "/repo/content" })).toBe("file.md");
     });
   });
 
@@ -273,6 +288,43 @@ describe("utils", () => {
       const result = await listFiles(tmpDir);
       expect(result.length).toBe(2);
       
+      await fs.rm(tmpDir, { recursive: true });
+    });
+
+    it("should apply custom ignore callback", async () => {
+      const tmpDir = "/tmp/test-list-files-custom-ignore";
+      await fs.mkdir(`${tmpDir}/tmp`, { recursive: true });
+      await fs.writeFile(`${tmpDir}/keep.txt`, "content1");
+      await fs.writeFile(`${tmpDir}/tmp/skip.txt`, "content2");
+
+      const result = await listFiles(tmpDir, undefined, {
+        shouldIgnore(relativePath) {
+          return relativePath.startsWith("tmp/");
+        },
+      });
+
+      expect(result.length).toBe(1);
+      expect(result[0]).toContain("keep.txt");
+
+      await fs.rm(tmpDir, { recursive: true });
+    });
+
+    it("should apply include callback before maxFiles limit", async () => {
+      const tmpDir = "/tmp/test-list-files-custom-include";
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(`${tmpDir}/a.txt`, "content1");
+      await fs.writeFile(`${tmpDir}/b.txt`, "content2");
+      await fs.writeFile(`${tmpDir}/c.pdf`, "content3");
+
+      const result = await listFiles(tmpDir, 1, {
+        shouldInclude(relativePath) {
+          return relativePath.endsWith(".pdf");
+        },
+      });
+
+      expect(result.length).toBe(1);
+      expect(result[0]).toContain("c.pdf");
+
       await fs.rm(tmpDir, { recursive: true });
     });
   });

@@ -18,6 +18,21 @@ export function normalizePathForId(filePath: string): string {
   return filePath.replace(/[/\\]/g, ":");
 }
 
+export function deriveIngestSource(filePath: string, options?: { rootDir?: string; singleFile?: boolean }): string {
+  if (options?.singleFile) {
+    return path.basename(filePath);
+  }
+
+  if (options?.rootDir) {
+    const relative = path.relative(options.rootDir, filePath);
+    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+      return relative.replace(/\\/g, "/");
+    }
+  }
+
+  return path.basename(filePath);
+}
+
 export function detectDocType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   const extMap: Record<string, string> = {
@@ -164,7 +179,12 @@ export function run(cmd: string, args: string[], cwd?: string): Promise<void> {
   });
 }
 
-export async function listFiles(root: string, maxFiles?: number): Promise<string[]> {
+export interface ListFilesOptions {
+  shouldIgnore?: (relativePath: string) => boolean;
+  shouldInclude?: (relativePath: string) => boolean;
+}
+
+export async function listFiles(root: string, maxFiles?: number, options?: ListFilesOptions): Promise<string[]> {
   const out: string[] = [];
   const stack = [root];
   const ignore = new Set([".git", "node_modules", "dist", "build", "target", ".next", ".cache", "vendor"]);
@@ -174,8 +194,15 @@ export async function listFiles(root: string, maxFiles?: number): Promise<string
     for (const e of entries) {
       if (ignore.has(e.name)) continue;
       const full = path.join(dir, e.name);
+      const relative = path.relative(root, full).replace(/\\/g, "/");
+      if (options?.shouldIgnore?.(relative)) {
+        continue;
+      }
       if (e.isDirectory()) stack.push(full);
       else if (e.isFile()) {
+        if (options?.shouldInclude && !options.shouldInclude(relative)) {
+          continue;
+        }
         out.push(full);
         // Early stop if we've reached the limit
         if (maxFiles !== undefined && out.length >= maxFiles) {
