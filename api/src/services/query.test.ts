@@ -259,43 +259,71 @@ describe("query service", () => {
   });
 
   it("returns graph data when graph expansion is requested", async () => {
-    const queryMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            chunk_id: "test-id:0",
-            distance: 0.1,
-            text: "hello world",
-            source: "test.txt",
-            chunk_index: 0,
-            base_id: "test-id",
-            doc_type: "text",
-            repo_id: null,
-            repo_url: null,
-            path: null,
-            lang: null,
-            item_url: null,
-            tier1_meta: {},
-            tier2_meta: { entities: [{ text: "EntityA" }] },
-            tier3_meta: null,
-            doc_summary: null,
-            doc_summary_short: null,
-            doc_summary_medium: null,
-            doc_summary_long: null,
-            payload_checksum: null,
-          },
-        ],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ name: "EntityA", type: "person" }],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ source_name: "EntityA", target_name: "EntityB", relationship_type: "related_to" }],
-      });
+    const chunkRow = {
+      chunk_id: "test-id:0",
+      distance: 0.1,
+      text: "hello world",
+      source: "test.txt",
+      chunk_index: 0,
+      base_id: "test-id",
+      doc_type: "text",
+      repo_id: null,
+      repo_url: null,
+      path: null,
+      lang: null,
+      item_url: null,
+      tier1_meta: {},
+      tier2_meta: { entities: [{ text: "EntityA" }] },
+      tier3_meta: null,
+      doc_summary: null,
+      doc_summary_short: null,
+      doc_summary_medium: null,
+      doc_summary_long: null,
+      payload_checksum: null,
+    };
+
+    const resolvedEntityRow = {
+      id: "entity-a-uuid",
+      name: "EntityA",
+      type: "person",
+      description: null,
+      mention_count: 0,
+    };
+
+    const traversalEntityRow = {
+      id: "entity-a-uuid",
+      name: "EntityA",
+      type: "person",
+      mention_count: 0,
+      depth: 0,
+      path_names: ["EntityA"],
+    };
+
+    const relationshipRow = {
+      source_name: "EntityA",
+      target_name: "EntityB",
+      relationship_type: "related_to",
+    };
+
+    const clientQueryMock = vi.fn()
+      .mockResolvedValueOnce({ rows: [] })                              // BEGIN
+      .mockResolvedValueOnce({ rows: [] })                              // SET LOCAL statement_timeout
+      .mockResolvedValueOnce({ rows: [traversalEntityRow] })            // traversal CTE
+      .mockResolvedValueOnce({ rows: [relationshipRow] })               // relationships
+      .mockResolvedValueOnce({ rows: [] });                             // COMMIT
+
+    const poolQueryMock = vi.fn()
+      .mockResolvedValueOnce({ rows: [chunkRow] })                      // vector search
+      .mockResolvedValueOnce({ rows: [resolvedEntityRow] });            // resolveEntities
 
     const { getPool } = await import("../db.js");
-    (getPool as any).mockReturnValueOnce({ query: queryMock });
+    (getPool as any).mockReturnValueOnce({
+      query: poolQueryMock,
+      connect: vi.fn(async () => ({
+        query: clientQueryMock,
+        release: vi.fn(),
+      })),
+    });
 
     const result = await query({ query: "hello", graphExpand: true });
 

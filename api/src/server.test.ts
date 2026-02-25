@@ -193,6 +193,56 @@ describe("API integration tests", () => {
       expect(res.statusCode).toBe(400);
       await app.close();
     });
+
+    it("returns 400 when both graphExpand and graph are provided", async () => {
+      const app = buildApp();
+      const res = await app.inject({
+        method: "POST",
+        url: "/query",
+        headers: {
+          authorization: "Bearer test-token",
+        },
+        payload: {
+          query: "test query",
+          graphExpand: true,
+          graph: { maxDepth: 2 },
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = res.json();
+      expect(body.error).toContain("graphExpand");
+      await app.close();
+    });
+
+    it("accepts graph parameter with valid options", async () => {
+      const { getPool } = await import("./db.js");
+      (getPool as any).mockReturnValueOnce({
+        query: vi.fn(async () => ({ rows: [] })),
+      });
+
+      const app = buildApp();
+      const res = await app.inject({
+        method: "POST",
+        url: "/query",
+        headers: {
+          authorization: "Bearer test-token",
+        },
+        payload: {
+          query: "test query",
+          graph: {
+            maxDepth: 2,
+            maxEntities: 100,
+            relationshipTypes: ["calls", "uses"],
+            includeDocuments: false,
+            seedEntities: ["EntityA"],
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      await app.close();
+    });
   });
 
   describe("auth integration", () => {

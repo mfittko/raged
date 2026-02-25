@@ -63,6 +63,7 @@ export async function runMigrations(options?: RunMigrationsOptions): Promise<voi
     "003_add_raw_data.sql",
     "004_switch_embeddings_to_1536.sql",
     "005_add_document_summary_levels.sql",
+    "006_add_entity_name_lower_index.sql",
   ];
 
   for (const migrationFile of migrations) {

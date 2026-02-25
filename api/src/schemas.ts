@@ -49,6 +49,25 @@ export const querySchema = {
     properties: {
       ...queryBodyProperties,
       graphExpand: { type: "boolean" as const },
+      graph: {
+        type: "object" as const,
+        additionalProperties: false as const,
+        properties: {
+          maxDepth: { type: "integer" as const, minimum: 1, maximum: 4 },
+          maxEntities: { type: "integer" as const, minimum: 1, maximum: 500 },
+          relationshipTypes: {
+            type: "array" as const,
+            maxItems: 20,
+            items: { type: "string" as const },
+          },
+          includeDocuments: { type: "boolean" as const },
+          seedEntities: {
+            type: "array" as const,
+            maxItems: 50,
+            items: { type: "string" as const },
+          },
+        },
+      },
     },
   },
 };
