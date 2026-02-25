@@ -1,6 +1,6 @@
 import { getPool } from "../db.js";
 import { translateFilter } from "../pg-helpers.js";
-import type { QueryResultItem, QueryResult } from "./query.js";
+import type { QueryResultItem, BaseQueryResult } from "./query.js";
 import type { FilterDSL } from "../pg-helpers.js";
 
 export interface MetadataQueryRequest {
@@ -23,7 +23,7 @@ export interface MetadataQueryRequest {
 export async function queryMetadata(
   request: MetadataQueryRequest,
   collection?: string,
-): Promise<QueryResult> {
+): Promise<BaseQueryResult> {
   const col = collection ?? request.collection ?? "docs";
   const topK = request.topK ?? 8;
 

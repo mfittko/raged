@@ -41,6 +41,18 @@ vi.mock("../embeddings.js", () => ({
   ),
 }));
 
+// Mock query-router to always return semantic so existing tests exercise the
+// vector-search path without being affected by routing classification logic.
+// Routing behavior is tested separately in query-router.test.ts.
+vi.mock("./query-router.js", () => ({
+  classifyQuery: vi.fn(async () => ({
+    strategy: "semantic",
+    method: "default",
+    confidence: 1.0,
+    durationMs: 0,
+  })),
+}));
+
 describe("countQueryTerms", () => {
   it("counts single term", () => {
     expect(countQueryTerms("hello")).toBe(1);

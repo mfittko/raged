@@ -35,17 +35,21 @@ export const ingestSchema = {
 
 const queryBodyProperties = {
   collection: { type: "string" as const },
-  query: { type: "string" as const, minLength: 1, pattern: "\\S" },
+  query: { type: "string" as const },
   topK: { type: "integer" as const, minimum: 1, maximum: 100 },
   minScore: { type: "number" as const, minimum: 0, maximum: 1 },
   filter: { type: "object" as const },
+  strategy: {
+    type: "string" as const,
+    enum: ["semantic", "metadata", "graph", "hybrid"],
+  },
 };
 
 export const querySchema = {
   body: {
     type: "object" as const,
     additionalProperties: false as const,
-    required: ["query"],
+    required: [],
     properties: {
       ...queryBodyProperties,
       graphExpand: { type: "boolean" as const },

@@ -5,18 +5,23 @@ import type { FilterDSL } from "../pg-helpers.js";
 import type { GraphParams } from "./graph-strategy.js";
 import { executeGraphStrategy } from "./graph-strategy.js";
 import { SqlGraphBackend } from "./sql-graph-backend.js";
+import { classifyQuery } from "./query-router.js";
+import type { RoutingResult, QueryStrategy } from "./query-router.js";
+import { queryMetadata } from "./query-metadata.js";
 
-export type { GraphParams };
+export type { GraphParams, RoutingResult, QueryStrategy };
 
 export interface QueryRequest {
   collection?: string;
-  query: string;
+  query?: string;
   topK?: number;
   minScore?: number;
   filter?: Record<string, unknown> | FilterDSL;
   /** @deprecated Use `graph` instead. */
   graphExpand?: boolean;
   graph?: GraphParams;
+  /** Explicit strategy override; skips rule engine and LLM classifier. */
+  strategy?: QueryStrategy;
 }
 
 export function countQueryTerms(value: string): number {
@@ -42,10 +47,15 @@ export interface QueryResultItem {
 import type { GraphResult } from "./graph-backend.js";
 export type { GraphResult };
 
-export interface QueryResult {
+/** Base result shape returned by internal query implementations (routing is added by query()). */
+export interface BaseQueryResult {
   ok: true;
   results: QueryResultItem[];
   graph?: GraphResult;
+}
+
+export interface QueryResult extends BaseQueryResult {
+  routing: RoutingResult;
 }
 
 /**
@@ -57,13 +67,37 @@ export async function query(
 ): Promise<QueryResult> {
   const col = collection || "docs";
 
-  const vectors = await embedTexts([request.query]);
+  // Classify the query intent
+  const routing = await classifyQuery({
+    query: request.query,
+    filter: request.filter as Record<string, unknown> | undefined,
+    graphExpand: request.graphExpand,
+    strategy: request.strategy,
+  });
+
+  // Metadata-only path (no embedding)
+  if (routing.strategy === "metadata") {
+    const metaResult = await queryMetadata(
+      { collection: col, topK: request.topK, filter: request.filter },
+      col,
+    );
+    return { ...metaResult, routing };
+  }
+
+  // Hybrid stub — falls back to semantic until #110 lands
+  // TODO(#110): implement hybrid result merging
+  if (routing.strategy === "hybrid") {
+    // fall through to semantic
+  }
+
+  const queryText = request.query ?? "";
+  const vectors = await embedTexts([queryText]);
   const [vector] = vectors;
   if (!vector) {
     throw new Error("Embedding failed: no vector returned");
   }
   const topK = request.topK ?? 8;
-  const minScore = request.minScore ?? getAutoMinScore(request.query);
+  const minScore = request.minScore ?? getAutoMinScore(queryText);
   const maxDistance = 1 - minScore;
 
   // Translate filter to Postgres WHERE clause (offset by 4 for base params: $1=collection, $2=vector, $3=topK, $4=maxDistance)
@@ -154,13 +188,17 @@ export async function query(
   let graphResult: GraphResult | undefined;
 
   // Graph expansion: convert deprecated graphExpand to graph params
-  const graphParams = request.graph ?? (request.graphExpand ? {} : null);
+  // Also used when routing strategy is "graph"
+  const graphParams =
+    routing.strategy === "graph"
+      ? (request.graph ?? {})
+      : (request.graph ?? (request.graphExpand ? {} : null));
   if (graphParams !== null) {
     const backend = new SqlGraphBackend(pool);
     graphResult = await executeGraphStrategy(graphParams, results, backend);
   }
 
-  const queryResult: QueryResult = { ok: true, results };
+  const queryResult: QueryResult = { ok: true, results, routing };
   if (graphResult) {
     queryResult.graph = graphResult;
   }

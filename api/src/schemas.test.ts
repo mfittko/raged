@@ -269,7 +269,23 @@ describe("ingest schema validation", () => {
 describe("query schema validation", () => {
   function buildApp() {
     const app = Fastify();
-    app.post("/query", { schema: querySchema }, async () => {
+    app.post("/query", {
+      schema: querySchema,
+      preValidation: async (req, reply) => {
+        const body = req.body as Record<string, unknown> | null;
+        const hasQuery =
+          typeof body?.query === "string" && body.query.trim().length > 0;
+        const hasFilter =
+          body?.filter !== undefined &&
+          body.filter !== null &&
+          typeof body.filter === "object";
+        if (!hasQuery && !hasFilter) {
+          return reply.status(400).send({
+            error: "Request must include either a non-empty query or a filter",
+          });
+        }
+      },
+    }, async () => {
       return { ok: true };
     });
     return app;

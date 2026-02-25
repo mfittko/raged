@@ -95,6 +95,18 @@ export function buildApp() {
           error: "Cannot use both graphExpand and graph parameters simultaneously",
         });
       }
+      // Require either a non-empty query OR a filter with conditions
+      const hasQuery =
+        typeof body?.query === "string" && body.query.trim().length > 0;
+      const hasFilter =
+        body?.filter !== undefined &&
+        body.filter !== null &&
+        typeof body.filter === "object";
+      if (!hasQuery && !hasFilter) {
+        return reply.status(400).send({
+          error: "Request must include either a non-empty query or a filter",
+        });
+      }
     },
   }, async (req, reply) => {
     const body = req.body as any;
