@@ -107,20 +107,35 @@ export class SqlGraphBackend implements GraphBackend {
     }>(
       `SELECT id::text, name, type, description, mention_count
        FROM entities
-       WHERE LOWER(name) = ANY($1::text[])`,
+       WHERE LOWER(name) = ANY($1::text[])
+       ORDER BY LOWER(name), name, id`,
       [normalised],
     );
 
     const resolved = new Map<string, ResolvedEntity>();
+    const exactByLower = new Map<string, typeof exactResult.rows>();
     for (const row of exactResult.rows) {
       const lower = row.name.toLowerCase();
+      const group = exactByLower.get(lower);
+      if (group) {
+        group.push(row);
+      } else {
+        exactByLower.set(lower, [row]);
+      }
+    }
+    for (const [lower, rows] of exactByLower) {
+      const requestedName = lowerToRequested.get(lower) ?? lower;
+      const selectedRow =
+        rows.find((row) => row.name === requestedName) ??
+        (rows.length === 1 ? rows[0] : undefined);
+      if (!selectedRow) continue;
       resolved.set(lower, {
-        id: row.id,
-        name: row.name,
-        type: row.type ?? "unknown",
-        description: row.description ?? undefined,
-        mentionCount: row.mention_count,
-        requestedName: lowerToRequested.get(lower) ?? row.name,
+        id: selectedRow.id,
+        name: selectedRow.name,
+        type: selectedRow.type ?? "unknown",
+        description: selectedRow.description ?? undefined,
+        mentionCount: selectedRow.mention_count,
+        requestedName,
       });
     }
 
@@ -241,7 +256,7 @@ export class SqlGraphBackend implements GraphBackend {
       SELECT * FROM (
         SELECT DISTINCT ON (id) id::text, name, type, mention_count, depth, path_names, path_rel_types
         FROM entity_graph
-        ORDER BY id, depth ASC
+        ORDER BY id, depth ASC, path_names ASC, path_rel_types ASC
       ) deduped
       ORDER BY depth ASC
       LIMIT $${maxEntitiesIdx}
@@ -275,7 +290,11 @@ export class SqlGraphBackend implements GraphBackend {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`SET LOCAL statement_timeout = ${params.timeLimitMs}`);
+      const statementTimeoutMs =
+        typeof params.timeLimitMs === "number" && Number.isFinite(params.timeLimitMs)
+          ? Math.max(0, Math.floor(params.timeLimitMs))
+          : 0;
+      await client.query(`SET LOCAL statement_timeout = ${statementTimeoutMs}`);
 
       const entityResult = await client.query<TraversalRow>(traversalSQL, queryParams);
       entityRows = entityResult.rows;
@@ -440,6 +459,10 @@ export class SqlGraphBackend implements GraphBackend {
       `SELECT id::text, name, type, description, mention_count
        FROM entities
        WHERE LOWER(name) = LOWER($1)
+       ORDER BY
+         CASE WHEN name = $1 THEN 0 ELSE 1 END,
+         mention_count DESC,
+         id ASC
        LIMIT 1`,
       [name],
     );

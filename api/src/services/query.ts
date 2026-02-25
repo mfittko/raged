@@ -38,8 +38,8 @@ export interface QueryResultItem {
   payload?: Record<string, unknown>;
 }
 
-export type { GraphResult as GraphData } from "./graph-backend.js";
 import type { GraphResult } from "./graph-backend.js";
+export type { GraphResult };
 
 export interface QueryResult {
   ok: true;

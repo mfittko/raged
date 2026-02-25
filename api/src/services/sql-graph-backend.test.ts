@@ -74,6 +74,43 @@ describe("SqlGraphBackend.resolveEntities", () => {
     expect((pool as any).query).toHaveBeenCalledTimes(1);
   });
 
+  it("skips ambiguous exact case-insensitive matches when no exact-case row exists", async () => {
+    const pool = makePool([
+      {
+        rows: [
+          { id: "uuid-1", name: "AuthService", type: "service", description: null, mention_count: 1 },
+          { id: "uuid-2", name: "AUTHSERVICE", type: "service", description: null, mention_count: 1 },
+        ],
+      },
+      {
+        rows: [
+          { matched_prefix: "authservice", id: "uuid-1", name: "AuthService", type: "service", description: null, mention_count: 1 },
+          { matched_prefix: "authservice", id: "uuid-2", name: "AUTHSERVICE", type: "service", description: null, mention_count: 1 },
+        ],
+      },
+    ]);
+    const backend = new SqlGraphBackend(pool as any);
+    const result = await backend.resolveEntities(["authservice"]);
+    expect(result).toHaveLength(0);
+  });
+
+  it("prefers exact-case row when multiple case-insensitive exact matches exist", async () => {
+    const pool = makePool([
+      {
+        rows: [
+          { id: "uuid-1", name: "AuthService", type: "service", description: null, mention_count: 1 },
+          { id: "uuid-2", name: "AUTHSERVICE", type: "service", description: null, mention_count: 1 },
+        ],
+      },
+    ]);
+    const backend = new SqlGraphBackend(pool as any);
+    const result = await backend.resolveEntities(["AUTHSERVICE"]);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("uuid-2");
+    expect(result[0].name).toBe("AUTHSERVICE");
+    expect(result[0].requestedName).toBe("AUTHSERVICE");
+  });
+
   it("returns empty for unresolved names when no prefix match", async () => {
     const pool = makePool([
       { rows: [] },  // exact match returns nothing

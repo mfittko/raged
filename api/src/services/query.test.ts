@@ -297,6 +297,17 @@ describe("query service", () => {
       mention_count: 0,
       depth: 0,
       path_names: ["EntityA"],
+      path_rel_types: [],
+    };
+
+    const traversalEntityRowB = {
+      id: "entity-b-uuid",
+      name: "EntityB",
+      type: "person",
+      mention_count: 0,
+      depth: 1,
+      path_names: ["EntityA", "EntityB"],
+      path_rel_types: ["related_to"],
     };
 
     const relationshipRow = {
@@ -308,7 +319,7 @@ describe("query service", () => {
     const clientQueryMock = vi.fn()
       .mockResolvedValueOnce({ rows: [] })                              // BEGIN
       .mockResolvedValueOnce({ rows: [] })                              // SET LOCAL statement_timeout
-      .mockResolvedValueOnce({ rows: [traversalEntityRow] })            // traversal CTE
+      .mockResolvedValueOnce({ rows: [traversalEntityRow, traversalEntityRowB] }) // traversal CTE
       .mockResolvedValueOnce({ rows: [relationshipRow] })               // relationships
       .mockResolvedValueOnce({ rows: [] });                             // COMMIT
 
