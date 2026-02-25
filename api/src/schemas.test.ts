@@ -400,4 +400,92 @@ describe("query schema validation", () => {
     expect(res.statusCode).toBe(400);
     await app.close();
   });
+
+  it("accepts graph parameter with defaults", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "auth flow", graph: {} },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("accepts graph parameter with all options", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: {
+        query: "auth flow",
+        graph: {
+          maxDepth: 3,
+          maxEntities: 100,
+          relationshipTypes: ["calls"],
+          includeDocuments: true,
+          seedEntities: ["EntityA", "EntityB"],
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("rejects graph.maxDepth below 1", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "auth", graph: { maxDepth: 0 } },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects graph.maxDepth above 4", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "auth", graph: { maxDepth: 5 } },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects graph.maxEntities above 500", async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "auth", graph: { maxEntities: 501 } },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects graph.relationshipTypes with more than 20 items", async () => {
+    const app = buildApp();
+    const types = Array.from({ length: 21 }, (_, i) => `type${i}`);
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "auth", graph: { relationshipTypes: types } },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects graph.seedEntities with more than 50 items", async () => {
+    const app = buildApp();
+    const seeds = Array.from({ length: 51 }, (_, i) => `Entity${i}`);
+    const res = await app.inject({
+      method: "POST",
+      url: "/query",
+      payload: { query: "auth", graph: { seedEntities: seeds } },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
 });

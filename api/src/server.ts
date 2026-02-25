@@ -24,6 +24,7 @@ import { getEnrichmentStatus, getEnrichmentStats, enqueueEnrichment, clearEnrich
 import { listCollections } from "./services/collections.js";
 import { claimTask, submitTaskResult, failTask, recoverStaleTasks } from "./services/internal.js";
 import { getPool } from "./db.js";
+import { SqlGraphBackend } from "./services/sql-graph-backend.js";
 import { downloadRawBlobStream } from "./blob-store.js";
 import path from "node:path";
 import type { Readable } from "node:stream";
@@ -85,7 +86,17 @@ export function buildApp() {
     return reply.send(result);
   });
 
-  app.post("/query", { schema: querySchema }, async (req, reply) => {
+  app.post("/query", {
+    schema: querySchema,
+    preValidation: async (req, reply) => {
+      const body = req.body as Record<string, unknown> | null;
+      if (body?.graphExpand && body?.graph) {
+        return reply.status(400).send({
+          error: "Cannot use both graphExpand and graph parameters simultaneously",
+        });
+      }
+    },
+  }, async (req, reply) => {
     const body = req.body as any;
     const result = await query(body, body.collection);
     return reply.send(result);
@@ -267,59 +278,27 @@ export function buildApp() {
   app.get("/graph/entity/:name", { schema: graphEntitySchema }, async (req, reply) => {
     const { name } = req.params as { name: string };
     const { limit = 100 } = req.query as { limit?: number };
-    const pool = getPool();
-    
-    // Get entity with related entities and relationships
-    const entityResult = await pool.query<{
-      name: string;
-      type: string | null;
-      description: string | null;
-      mention_count: number;
-    }>(
-      `SELECT name, type, description, mention_count
-       FROM entities
-       WHERE name = $1`,
-      [name]
-    );
 
-    if (entityResult.rows.length === 0) {
+    const backend = new SqlGraphBackend(getPool());
+    const entity = await backend.getEntity(name);
+
+    if (!entity) {
       return reply.status(404).send({ error: `Entity not found: ${name}` });
     }
 
-    const entity = entityResult.rows[0];
-
-    // Get relationships (both outgoing and incoming)
-    const relationshipsResult = await pool.query<{
-      source_name: string;
-      target_name: string;
-      relationship_type: string;
-      description: string | null;
-    }>(
-      `SELECT 
-        es.name AS source_name,
-        et.name AS target_name,
-        er.relationship_type,
-        er.description
-       FROM entity_relationships er
-       JOIN entities es ON er.source_id = es.id
-       JOIN entities et ON er.target_id = et.id
-       WHERE es.name = $1 OR et.name = $1
-       ORDER BY er.created_at DESC
-       LIMIT $2`,
-      [name, limit]
-    );
+    const relationships = await backend.getEntityRelationships(entity.id, limit);
 
     return reply.send({
       entity: {
         name: entity.name,
         type: entity.type,
         description: entity.description,
-        mentionCount: entity.mention_count,
+        mentionCount: entity.mentionCount,
       },
-      relationships: relationshipsResult.rows.map((r) => ({
-        source: r.source_name,
-        target: r.target_name,
-        type: r.relationship_type,
+      relationships: relationships.map((r) => ({
+        source: r.direction === "outbound" ? entity.name : r.entityName,
+        target: r.direction === "outbound" ? r.entityName : entity.name,
+        type: r.relationship,
         description: r.description,
       })),
     });

@@ -6,6 +6,17 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 
 ---
 
+## February 25, 2026
+
+### Added
+
+- **Graph traversal strategy** ([#118](https://github.com/mfittko/RAGed/pull/118)): Introduces a GraphBackend abstraction, SqlGraphBackend implementation, and new strategy orchestration so POST /query executes RFC #114–aligned graph traversals with bounded depth, cycle detection, entity caps, deterministic deduplication, timeout handling, and consistent relationship filtering.
+
+### Changed
+
+- **Graph API validation** ([#118](https://github.com/mfittko/RAGed/pull/118)): Adds graph request schemas, graphExpand compatibility, mutual exclusion handling, and entity resolution routing via the backend plus a case-insensitive entity name index migration to ensure the new strategy is surfaced safely.
+
+
 ## February 24, 2026
 
 ### Added
