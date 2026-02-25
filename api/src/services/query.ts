@@ -91,23 +91,27 @@ export async function query(
   }
 
   // Hybrid path: metadata → semantic rerank (filter present, no graphExpand)
-  // or graph → semantic rerank (graphExpand: true).
+  // or graph → semantic rerank (graphExpand, explicit graph params, or no filter).
+  // Flow discriminator: if a filter is present AND no graph expansion is requested,
+  // use Flow 1 (metadata candidates → semantic rerank). Otherwise use Flow 2
+  // (graph traversal → semantic rerank), which also handles the router's
+  // `relational_pattern` rule that emits `hybrid` with no filter or graphExpand.
   if (routing.strategy === "hybrid") {
-    const pool = getPool();
     const topK = request.topK ?? 8;
     const minScore = request.minScore ?? getAutoMinScore(queryText);
-    const graphExpand = request.graphExpand ?? (request.graph !== undefined);
+    const hasFilter = request.filter !== undefined && request.filter !== null;
+    const hasGraphExpand = (request.graphExpand === true) || (request.graph !== undefined);
 
-    if (graphExpand || request.graph !== undefined) {
+    if (hasGraphExpand || !hasFilter) {
       // Flow 2: graph → semantic rerank
-      const backend = new SqlGraphBackend(pool);
+      const backend = new SqlGraphBackend(getPool());
       const hybridResult = await hybridGraphFlow(
         { collection: col, query: queryText, topK, minScore, graph: request.graph },
         backend,
       );
       return { ...hybridResult, routing };
     } else {
-      // Flow 1: metadata → semantic rerank
+      // Flow 1: metadata → semantic rerank (filter is present, no graph expansion)
       const hybridResult = await hybridMetadataFlow({
         collection: col,
         query: queryText,

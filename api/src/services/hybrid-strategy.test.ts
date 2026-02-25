@@ -31,7 +31,9 @@ function makeSeedEntry(id: string, semanticScore: number): SeedPoolEntry {
 }
 
 const defaultRerankRow = {
-  chunk_id: "uuid-1:0",
+  chunk_id: "chunk-uuid-1:0",
+  /** document_id is documents.id — distinct from the chunk UUID in chunk_id */
+  document_id: "doc-uuid-1",
   distance: 0.1,
   text: "text",
   source: "src.txt",
@@ -231,7 +233,7 @@ describe("hybridMetadataFlow", () => {
   it("calls embed() exactly once when candidates exist", async () => {
     const { getPool } = await import("../db.js");
     const queryMock = vi.fn()
-      .mockResolvedValueOnce({ rows: [{ chunk_id: "uuid-1:0" }] }) // Phase 1
+      .mockResolvedValueOnce({ rows: [{ chunk_uuid: "uuid-1" }] }) // Phase 1
       .mockResolvedValueOnce({ rows: [{ ...defaultRerankRow, distance: 0.2 }] }); // Phase 2
     (getPool as ReturnType<typeof vi.fn>).mockReturnValueOnce({ query: queryMock });
 
@@ -245,11 +247,11 @@ describe("hybridMetadataFlow", () => {
   it("happy path: returns results sorted by similarity", async () => {
     const { getPool } = await import("../db.js");
     const queryMock = vi.fn()
-      .mockResolvedValueOnce({ rows: [{ chunk_id: "uuid-1:0" }, { chunk_id: "uuid-2:0" }] })
+      .mockResolvedValueOnce({ rows: [{ chunk_uuid: "uuid-1" }, { chunk_uuid: "uuid-2" }] })
       .mockResolvedValueOnce({
         rows: [
-          { ...defaultRerankRow, chunk_id: "uuid-1:0", distance: 0.1 },
-          { ...defaultRerankRow, chunk_id: "uuid-2:0", distance: 0.3 },
+          { ...defaultRerankRow, chunk_id: "chunk-uuid-1:0", distance: 0.1 },
+          { ...defaultRerankRow, chunk_id: "chunk-uuid-2:0", distance: 0.3 },
         ],
       });
     (getPool as ReturnType<typeof vi.fn>).mockReturnValueOnce({ query: queryMock });
@@ -264,9 +266,9 @@ describe("hybridMetadataFlow", () => {
   it("applies minScore filter to final results", async () => {
     const { getPool } = await import("../db.js");
     const queryMock = vi.fn()
-      .mockResolvedValueOnce({ rows: [{ chunk_id: "uuid-1:0" }] })
+      .mockResolvedValueOnce({ rows: [{ chunk_uuid: "uuid-1" }] })
       .mockResolvedValueOnce({
-        rows: [{ ...defaultRerankRow, chunk_id: "uuid-1:0", distance: 0.8 }],
+        rows: [{ ...defaultRerankRow, chunk_id: "chunk-uuid-1:0", distance: 0.8 }],
       });
     (getPool as ReturnType<typeof vi.fn>).mockReturnValueOnce({ query: queryMock });
 
@@ -307,14 +309,17 @@ describe("hybridGraphFlow", () => {
 
   const seedRow = {
     ...defaultRerankRow,
-    chunk_id: "seed-uuid:0",
+    chunk_id: "seed-chunk-uuid:0",
+    document_id: "seed-doc-uuid",
     distance: 0.15,
     tier2_meta: { entities: [{ text: "EntityA" }] },
   };
 
   const graphRow = {
     ...defaultRerankRow,
-    chunk_id: "graph-uuid:0",
+    chunk_id: "graph-chunk-uuid:0",
+    // document_id is distinct from chunk UUID — this is documents.id, not chunks.id
+    document_id: "graph-doc-uuid",
     distance: 0.1,
   };
 
@@ -327,7 +332,7 @@ describe("hybridGraphFlow", () => {
 
     const backend = makeBackend({
       getEntityDocuments: vi.fn(async (): Promise<EntityDocument[]> => [
-        { documentId: "graph-uuid", source: "src.txt", entityName: "EntityA", mentionCount: 3 },
+        { documentId: "graph-doc-uuid", source: "src.txt", entityName: "EntityA", mentionCount: 3 },
       ]),
     });
 
@@ -346,7 +351,7 @@ describe("hybridGraphFlow", () => {
 
     const backend = makeBackend({
       getEntityDocuments: vi.fn(async (): Promise<EntityDocument[]> => [
-        { documentId: "graph-uuid", source: "src.txt", entityName: "EntityA", mentionCount: 3 },
+        { documentId: "graph-doc-uuid", source: "src.txt", entityName: "EntityA", mentionCount: 3 },
       ]),
     });
 
@@ -361,7 +366,7 @@ describe("hybridGraphFlow", () => {
   it("falls back to seed results when no entity names extracted", async () => {
     const { getPool } = await import("../db.js");
     // seed row with no entity metadata
-    const emptyMetaRow = { ...defaultRerankRow, chunk_id: "seed-uuid:0", distance: 0.2 };
+    const emptyMetaRow = { ...defaultRerankRow, chunk_id: "seed-chunk-uuid:0", distance: 0.2 };
     const queryMock = vi.fn().mockResolvedValueOnce({ rows: [emptyMetaRow] });
     (getPool as ReturnType<typeof vi.fn>).mockReturnValueOnce({ query: queryMock });
 
@@ -373,6 +378,10 @@ describe("hybridGraphFlow", () => {
     expect(result.results).toHaveLength(1);
     expect(backend.resolveEntities).not.toHaveBeenCalled();
     expect(backend.traverse).not.toHaveBeenCalled();
+    // graph field is populated with empty result + warning
+    expect(result.graph).toBeDefined();
+    expect(result.graph?.entities).toHaveLength(0);
+    expect(result.graph?.meta.warnings).toContain("No entities found in seed results to seed the graph");
   });
 
   it("falls back to seed results when getEntityDocuments returns empty", async () => {
@@ -388,7 +397,7 @@ describe("hybridGraphFlow", () => {
 
     expect(result.ok).toBe(true);
     expect(result.results).toHaveLength(1);
-    expect(result.results[0].id).toBe("seed-uuid:0");
+    expect(result.results[0].id).toBe("seed-chunk-uuid:0");
     // graph field is still populated from traversal
     expect(result.graph).toBeDefined();
   });
@@ -396,16 +405,20 @@ describe("hybridGraphFlow", () => {
   it("overlapping chunk gets graph pool blended score (deduplication)", async () => {
     const { getPool } = await import("../db.js");
     // seed and graph share the same chunk id
-    const sharedChunkId = "shared-uuid:0";
+    const sharedChunkId = "shared-chunk-uuid:0";
+    // document_id is distinct from chunk UUID — as it would be in the real schema
+    const sharedDocId = "shared-doc-uuid";
     const sharedSeedRow = {
       ...defaultRerankRow,
       chunk_id: sharedChunkId,
+      document_id: sharedDocId,
       distance: 0.3, // semanticScore = 0.7
       tier2_meta: { entities: [{ text: "EntityA" }] },
     };
     const sharedGraphRow = {
       ...defaultRerankRow,
       chunk_id: sharedChunkId,
+      document_id: sharedDocId,
       distance: 0.3, // semanticScore = 0.7
     };
 
@@ -416,7 +429,8 @@ describe("hybridGraphFlow", () => {
 
     const backend = makeBackend({
       getEntityDocuments: vi.fn(async (): Promise<EntityDocument[]> => [
-        { documentId: "shared-uuid", source: "src.txt", entityName: "EntityA", mentionCount: 5 },
+        // documentId = sharedDocId (documents.id), NOT derived from chunk_id
+        { documentId: sharedDocId, source: "src.txt", entityName: "EntityA", mentionCount: 5 },
       ]),
     });
 
@@ -432,13 +446,15 @@ describe("hybridGraphFlow", () => {
     const { getPool } = await import("../db.js");
     const manyRows = Array.from({ length: 15 }, (_, i) => ({
       ...defaultRerankRow,
-      chunk_id: `seed-uuid-${i}:0`,
+      chunk_id: `seed-chunk-${i}:0`,
+      document_id: `seed-doc-${i}`,
       distance: 0.1 + i * 0.01,
       tier2_meta: { entities: [{ text: "EntityA" }] },
     }));
     const graphRows = Array.from({ length: 10 }, (_, i) => ({
       ...defaultRerankRow,
-      chunk_id: `graph-uuid-${i}:0`,
+      chunk_id: `graph-chunk-${i}:0`,
+      document_id: `graph-doc-${i}`,
       distance: 0.2 + i * 0.01,
     }));
 
@@ -450,7 +466,7 @@ describe("hybridGraphFlow", () => {
     const backend = makeBackend({
       getEntityDocuments: vi.fn(async (): Promise<EntityDocument[]> =>
         graphRows.map((r) => ({
-          documentId: r.chunk_id.split(":")[0]!,
+          documentId: r.document_id,
           source: "src.txt",
           entityName: "EntityA",
           mentionCount: 1,
@@ -486,9 +502,10 @@ describe("hybrid strategy boundary tests", () => {
     expect(params[1]).toBe(500);
   });
 
-  it("weight invariant: SEMANTIC_WEIGHT + MENTION_WEIGHT must equal 1.0 (module-load assertion)", () => {
-    // The assertion fires at module load; we can only verify the module loaded
-    // successfully (no throw) which means the invariant is satisfied.
-    expect(true).toBe(true);
+  it("weight invariant: module loads successfully, confirming SEMANTIC_WEIGHT + MENTION_WEIGHT = 1.0", async () => {
+    // Dynamic import re-executes the module's top-level code (including the
+    // invariant check). If the weights didn't sum to 1.0, the import would throw.
+    const module = await import("./hybrid-strategy.js");
+    expect(module.mergeAndRerankGraphResults).toBeDefined();
   });
 });

@@ -91,6 +91,12 @@ interface RerankRow {
   payload_checksum: string | null;
 }
 
+/** Flow 2 rerank row — extends RerankRow with the document's UUID for mention lookup. */
+interface GraphRerankRow extends RerankRow {
+  /** documents.id — the document UUID, distinct from the chunk's own UUID. */
+  document_id: string;
+}
+
 function rowToResultItem(row: RerankRow, score: number): QueryResultItem {
   return {
     id: row.chunk_id,
@@ -249,16 +255,18 @@ export async function hybridMetadataFlow(
 
   // -------------------------------------------------------------------------
   // Phase 1: retrieve candidate IDs via metadata filter (no embedding)
+  // Filters to rows with embeddings so Phase 2 never sees null-embedding rows.
   // Required index: chunks(document_id) + documents(collection) — standard FK index.
   // For large collections, a composite index on (document_id, created_at) improves ORDER BY.
   // -------------------------------------------------------------------------
   const { sql: filterSql, params: filterParams } = translateFilter(filter, 2);
 
-  const candidateResult = await pool.query<{ chunk_id: string }>(
-    `SELECT c.id::text || ':' || c.chunk_index::text AS chunk_id
+  const candidateResult = await pool.query<{ chunk_uuid: string }>(
+    `SELECT c.id::text AS chunk_uuid
      FROM chunks c
      JOIN documents d ON c.document_id = d.id
-     WHERE d.collection = $1${filterSql}
+     WHERE d.collection = $1
+       AND c.embedding IS NOT NULL${filterSql}
      ORDER BY c.created_at DESC
      LIMIT $2`,
     [col, candidateLimit, ...filterParams],
@@ -268,7 +276,7 @@ export async function hybridMetadataFlow(
     return { ok: true, results: [] };
   }
 
-  const candidateIds = candidateResult.rows.map((r) => r.chunk_id);
+  const candidateUuids = candidateResult.rows.map((r) => r.chunk_uuid);
 
   // -------------------------------------------------------------------------
   // Phase 2: embed query once, rerank candidates by cosine similarity
@@ -280,10 +288,7 @@ export async function hybridMetadataFlow(
   }
 
   // Single batch query — no N+1 pattern.
-  // Note: the WHERE predicate `c.id::text || ':' || c.chunk_index::text = ANY(...)` evaluates
-  // the expression for every row (full scan on the filtered set), since the expression is not
-  // indexed. This is acceptable because candidateLimit caps the candidate set at 500 rows.
-  // For future optimisation, store chunk_id as a generated column with an index.
+  // Uses the primary key index on chunks(id) via ANY($3::uuid[]).
   const rerankResult = await pool.query<RerankRow>(
     `SELECT
        c.id::text || ':' || c.chunk_index::text AS chunk_id,
@@ -308,11 +313,10 @@ export async function hybridMetadataFlow(
        d.payload_checksum
      FROM chunks c
      JOIN documents d ON c.document_id = d.id
-     WHERE c.id::text || ':' || c.chunk_index::text = ANY($3::text[])
-       AND c.embedding IS NOT NULL
+     WHERE c.id = ANY($3::uuid[])
      ORDER BY c.embedding <=> $2::vector
      LIMIT $1`,
-    [candidateLimit, JSON.stringify(vector), candidateIds],
+    [candidateLimit, JSON.stringify(vector), candidateUuids],
   );
 
   const results: QueryResultItem[] = rerankResult.rows
@@ -419,11 +423,28 @@ export async function hybridGraphFlow(
   const entityNames = extractEntityNamesFromResults(seedItems);
 
   if (entityNames.length === 0) {
-    // Empty graph fallback: no entities found → return seed results
+    // Empty graph fallback: no entities found → return seed results with empty graph
     const filteredSeed = seedItems
       .filter((item) => item.score >= minScore)
       .slice(0, topK);
-    return { ok: true, results: filteredSeed };
+    const emptyGraph: GraphResult = {
+      entities: [],
+      relationships: [],
+      paths: [],
+      documents: [],
+      meta: {
+        seedEntities: [],
+        seedSource: "results",
+        maxDepthUsed: graphParams?.maxDepth ?? DEFAULT_MAX_DEPTH,
+        entityCount: 0,
+        entityCap: graphParams?.maxEntities ?? DEFAULT_MAX_ENTITIES,
+        capped: false,
+        timeLimitMs: TRAVERSAL_TIME_LIMIT_MS,
+        timedOut: false,
+        warnings: ["No entities found in seed results to seed the graph"],
+      },
+    };
+    return { ok: true, results: filteredSeed, graph: emptyGraph };
   }
 
   // -------------------------------------------------------------------------
@@ -435,7 +456,24 @@ export async function hybridGraphFlow(
     const filteredSeed = seedItems
       .filter((item) => item.score >= minScore)
       .slice(0, topK);
-    return { ok: true, results: filteredSeed };
+    const emptyGraph: GraphResult = {
+      entities: [],
+      relationships: [],
+      paths: [],
+      documents: [],
+      meta: {
+        seedEntities: entityNames,
+        seedSource: "results",
+        maxDepthUsed: graphParams?.maxDepth ?? DEFAULT_MAX_DEPTH,
+        entityCount: 0,
+        entityCap: graphParams?.maxEntities ?? DEFAULT_MAX_ENTITIES,
+        capped: false,
+        timeLimitMs: TRAVERSAL_TIME_LIMIT_MS,
+        timedOut: false,
+        warnings: ["None of the seed entities could be resolved"],
+      },
+    };
+    return { ok: true, results: filteredSeed, graph: emptyGraph };
   }
 
   const seedEntityIds = resolvedEntities.map((e) => e.id);
@@ -493,9 +531,10 @@ export async function hybridGraphFlow(
   // -------------------------------------------------------------------------
   const connectedDocIds = [...new Set(entityDocs.map((d) => d.documentId))];
 
-  const rerankResult = await pool.query<RerankRow>(
+  const rerankResult = await pool.query<GraphRerankRow>(
     `SELECT
        c.id::text || ':' || c.chunk_index::text AS chunk_id,
+       d.id::text AS document_id,
        c.embedding <=> $2::vector AS distance,
        c.text,
        d.source,
@@ -539,18 +578,11 @@ export async function hybridGraphFlow(
     }
   }
 
-  // chunk_id is "uuid:chunkIndex" — extract document UUID for mention lookup.
-  // split(":")[0] is always a string (never undefined), but could be empty for
-  // malformed IDs. Fall back to the full chunk_id in that case.
-  function docIdFromChunkId(chunkId: string): string {
-    const part = chunkId.split(":")[0];
-    return part !== "" ? (part as string) : chunkId;
-  }
-
+  // row.document_id is documents.id (selected as d.id::text in the rerank SQL).
+  // This is the correct key for mentionByDoc — distinct from chunks.id in chunk_id.
   const graphPool: GraphPoolEntry[] = rerankResult.rows.map((row) => {
     const semanticScore = 1 - row.distance;
-    const docId = docIdFromChunkId(row.chunk_id);
-    const mentionCount = mentionByDoc.get(docId) ?? 0;
+    const mentionCount = mentionByDoc.get(row.document_id) ?? 0;
     return { item: rowToResultItem(row, semanticScore), semanticScore, mentionCount };
   });
 

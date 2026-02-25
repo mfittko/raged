@@ -377,3 +377,82 @@ describe("query service", () => {
     ]);
   });
 });
+
+describe("query service — hybrid dispatch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("dispatches to hybridMetadataFlow when strategy=hybrid with filter, no graphExpand", async () => {
+    const { classifyQuery } = await import("./query-router.js");
+    (classifyQuery as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      strategy: "hybrid",
+      method: "rule",
+      confidence: 0.8,
+      durationMs: 1,
+    });
+
+    // Phase 1 returns no candidates → hybridMetadataFlow returns []
+    const { getPool } = await import("../db.js");
+    (getPool as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      query: vi.fn(async () => ({ rows: [] })),
+    });
+
+    const result = await query({ query: "find docs", filter: { docType: "code" } });
+
+    expect(result.ok).toBe(true);
+    expect(result.routing.strategy).toBe("hybrid");
+    // embed() must NOT be called when metadata phase returns no candidates
+    const { embed } = await import("../embeddings.js");
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it("dispatches to hybridGraphFlow when strategy=hybrid with graphExpand=true", async () => {
+    const { classifyQuery } = await import("./query-router.js");
+    (classifyQuery as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      strategy: "hybrid",
+      method: "rule",
+      confidence: 0.8,
+      durationMs: 1,
+    });
+
+    // Seed search returns no rows → hybridGraphFlow falls back to []
+    const { getPool } = await import("../db.js");
+    (getPool as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      query: vi.fn(async () => ({ rows: [] })),
+    });
+
+    const result = await query({ query: "related entities", graphExpand: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.routing.strategy).toBe("hybrid");
+    // embed() IS called for Flow 2 (needed for seed search)
+    const { embed } = await import("../embeddings.js");
+    expect(embed).toHaveBeenCalledTimes(1);
+  });
+
+  it("dispatches to hybridGraphFlow when strategy=hybrid with no filter (relational_pattern)", async () => {
+    const { classifyQuery } = await import("./query-router.js");
+    (classifyQuery as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      strategy: "hybrid",
+      method: "rule",
+      rule: "relational_pattern",
+      confidence: 0.6,
+      durationMs: 1,
+    });
+
+    const { getPool } = await import("../db.js");
+    (getPool as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      query: vi.fn(async () => ({ rows: [] })),
+    });
+
+    // No filter, no graphExpand → should go to Flow 2 (graph), not Flow 1 (metadata)
+    const result = await query({ query: "how does X relate to Y" });
+
+    expect(result.ok).toBe(true);
+    expect(result.routing.strategy).toBe("hybrid");
+    // embed() IS called — confirms Flow 2 path was taken
+    const { embed } = await import("../embeddings.js");
+    expect(embed).toHaveBeenCalledTimes(1);
+  });
+});
