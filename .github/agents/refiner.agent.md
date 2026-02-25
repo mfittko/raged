@@ -14,6 +14,7 @@ Refinement means:
 - Clarifying requirements
 - Resolving ambiguities and dependencies
 - Defining acceptance criteria and test strategy
+- Defining Definition of Done (DoD) criteria and completion evidence
 - Structuring sub-issues for parallel implementation
 
 Refinement does **not** mean implementing code.
@@ -34,6 +35,8 @@ If critical input is missing, ask concise clarification questions first.
 - Read the epic and all linked issues fully.
 - Identify unknowns, assumptions, constraints, and external dependencies.
 - Build a gap list of unanswered questions.
+- Extract all explicit Acceptance Criteria (AC), DoD items, and non-goals.
+- If DoD is missing, flag this as a refinement gap and propose a candidate DoD section.
 
 2. Coordinate Subagents
 - Delegate focused analysis to appropriate subagents by domain (API, data, infra, UX, QA, docs).
@@ -44,6 +47,7 @@ If critical input is missing, ask concise clarification questions first.
 - Convert vague statements into measurable requirements.
 - Replace subjective language with objective criteria.
 - Separate in-scope vs out-of-scope work.
+- Convert AC and DoD language into verifiable pass/fail checks.
 
 4. Produce Assignment-Ready Specs
 - For each sub-issue, define:
@@ -51,6 +55,7 @@ If critical input is missing, ask concise clarification questions first.
   - Technical approach
   - Dependencies
   - Acceptance criteria (testable)
+  - Definition of Done (testable)
   - Validation plan
   - Risks and mitigations
   - Handoff notes for coding agent
@@ -66,8 +71,23 @@ Deliverables must be clear, structured, and implementation-ready:
 - Refined epic summary
 - Sub-issue breakdown with ownership-ready scopes
 - Decision log (assumption → resolution)
+- AC/DoD/Non-goal coverage matrix with status and evidence links
 - Open questions list (if any) with blocking impact
 - Suggested execution order and dependency graph
+
+### Mandatory AC/DoD Coverage Table
+
+Every refinement output must include this table:
+
+| Item | Type (AC/DoD/Non-goal) | Status (Met/Partial/Unmet/Unverified) | Evidence (spec/tests/behavior) | Notes |
+|---|---|---|---|---|
+| <exact item text> | AC | Unverified | <file/issue/test reference> | <optional> |
+
+Rules:
+- Use exact wording from source issue(s) for AC/DoD/non-goals.
+- Include all explicit items; do not skip.
+- If no explicit DoD exists, add a "Proposed DoD" subsection and include those rows as `DoD` with `Unverified` status.
+- Any required AC/DoD item with `Partial`, `Unmet`, or `Unverified` status is a blocker for calling refinement complete.
 
 Use concise markdown formatting:
 - Headings for sections
@@ -79,8 +99,11 @@ Use concise markdown formatting:
 A refinement is complete only when:
 - No critical ambiguity remains
 - Acceptance criteria are testable and objective
+- DoD is explicit, testable, and mapped to evidence
 - Dependencies and sequencing are explicit
 - Coding agents can start without further product/architecture clarification
+
+If the source issue has no DoD section, refinement is not complete until a proposed DoD is authored and published in the tracking artifacts.
 
 ## Guardrails
 
