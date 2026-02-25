@@ -8,6 +8,7 @@ import { SqlGraphBackend } from "./sql-graph-backend.js";
 import { classifyQuery } from "./query-router.js";
 import type { RoutingResult, QueryStrategy } from "./query-router.js";
 import { queryMetadata } from "./query-metadata.js";
+import { hybridMetadataFlow, hybridGraphFlow } from "./hybrid-strategy.js";
 
 export type { GraphParams, RoutingResult, QueryStrategy };
 
@@ -89,10 +90,33 @@ export async function query(
     throw new Error("Query text is required for semantic, graph, and hybrid strategies");
   }
 
-  // Hybrid stub — falls back to semantic until #110 lands
-  // TODO(#110): implement hybrid result merging
+  // Hybrid path: metadata → semantic rerank (filter present, no graphExpand)
+  // or graph → semantic rerank (graphExpand: true).
   if (routing.strategy === "hybrid") {
-    // fall through to semantic
+    const pool = getPool();
+    const topK = request.topK ?? 8;
+    const minScore = request.minScore ?? getAutoMinScore(queryText);
+    const graphExpand = request.graphExpand ?? (request.graph !== undefined);
+
+    if (graphExpand || request.graph !== undefined) {
+      // Flow 2: graph → semantic rerank
+      const backend = new SqlGraphBackend(pool);
+      const hybridResult = await hybridGraphFlow(
+        { collection: col, query: queryText, topK, minScore, graph: request.graph },
+        backend,
+      );
+      return { ...hybridResult, routing };
+    } else {
+      // Flow 1: metadata → semantic rerank
+      const hybridResult = await hybridMetadataFlow({
+        collection: col,
+        query: queryText,
+        topK,
+        minScore,
+        filter: request.filter,
+      });
+      return { ...hybridResult, routing };
+    }
   }
 
   const vectors = await embedTexts([queryText]);
