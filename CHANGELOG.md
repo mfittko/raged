@@ -7,10 +7,12 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 ---
 
 
+
 ## February 25, 2026
 
 ### Added
 
+- **Three-tier query router** ([#120](https://github.com/mfittko/RAGed/pull/120)): Introduced a routing pipeline for POST /query that prioritizes explicit strategies, deterministic rules, and an LLM fallback with a circuit breaker, while including routing metadata on every response for downstream consumers.
 - **Metadata Filter DSL** ([#119](https://github.com/mfittko/RAGed/pull/119)): Adds a filter DSL to the metadata strategy engine so queries can express metadata constraints more precisely before the retrieval step.
 - **Metadata-Only Query Path** ([#119](https://github.com/mfittko/RAGed/pull/119)): Introduces a dedicated metadata-only query execution path that skips full retrieval when only metadata is required, improving efficiency.
 - **Temporal CLI Flags** ([#119](https://github.com/mfittko/RAGed/pull/119)): Adds temporal start/end options to the CLI query command to let users scope queries to a specific time window.
@@ -18,6 +20,7 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 
 ### Changed
 
+- **Relaxed query validation** ([#120](https://github.com/mfittko/RAGed/pull/120)): Updated the schema/prevalidation so requests can rely on filters when the query is empty, added coverage for invalid strategy errors returning 400, and refined request tests to exercise the enhanced validation.
 - **Graph API validation** ([#118](https://github.com/mfittko/RAGed/pull/118)): Adds graph request schemas, graphExpand compatibility, mutual exclusion handling, and entity resolution routing via the backend plus a case-insensitive entity name index migration to ensure the new strategy is surfaced safely.
 
 ## February 24, 2026
