@@ -38,7 +38,7 @@ Stateless HTTP service exposing core endpoints:
 
 **Ingestion & Query:**
 - `POST /ingest` — Receives text items or URLs (code, docs, PDFs, images, web pages, etc.), optionally fetches URL content server-side with SSRF protection, runs tier-1 extraction, chunks, embeds via Ollama, upserts vectors into Postgres, optionally enqueues enrichment
-- `POST /query` — Embeds the query text, performs similarity search in Postgres using pgvector, supports adaptive/manual `minScore`, optional filters, and optional graph expansion
+- `POST /query` — Classifies query intent via multi-strategy router (semantic, metadata, graph, hybrid), then executes the selected path: embeds query text via Ollama + pgvector similarity search, metadata-only filter scan, graph traversal, or hybrid blended retrieval. Returns a unified response with `results`, `routing`, and optional `graph` fields.
 - `POST /query/download-first` — Runs query and returns the first match as a downloadable binary (from `raw_data` or blob store key)
 - `POST /query/fulltext-first` — Runs query and returns concatenated chunk text for the first matching document
 - `GET /collections` — Returns collection-level document/chunk/enrichment counts
@@ -233,9 +233,43 @@ sequenceDiagram
     O-->>A: 768d vector
     A->>P: search(vector, limit, filter) using pgvector
     P-->>A: Ranked results
-    A-->>C: { results: [...] }
+    A-->>C: { results: [...], routing: { strategy: "semantic", ... } }
     C-->>U: Display results
 ```
+
+### Query Router
+
+The router classifies each query into one of four strategies before execution.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant R as Router
+    participant E as Rule Engine
+    participant L as LLM (optional)
+
+    C->>R: POST /query { query, filter?, strategy? }
+    alt Explicit override
+        R-->>C: strategy = explicit
+    else Rule engine
+        R->>E: Evaluate rules (keyword, filter-only, graph pattern)
+        E-->>R: strategy + confidence
+        R-->>C: strategy = rule
+    else LLM fallback
+        R->>L: Classify intent
+        L-->>R: strategy
+        R-->>C: strategy = llm
+    else Default
+        R-->>C: strategy = semantic (default)
+    end
+    Note over R,C: routing.strategy: semantic | metadata | graph | hybrid
+```
+
+Strategies:
+- **semantic** — vector similarity search (default)
+- **metadata** — filter-only scan, no embedding needed; score is always `1.0`
+- **graph** — entity graph traversal + semantic rerank
+- **hybrid** — metadata or graph candidates re-ranked by semantic similarity
 
 ### Hybrid Vector + Graph Search
 
@@ -247,8 +281,8 @@ sequenceDiagram
     participant O as Ollama
     participant P as Postgres
 
-    U->>C: raged query --q "auth flow" (with graphExpand)
-    C->>A: POST /query { query, topK, graphExpand: true }
+    U->>C: raged query --q "auth flow" --strategy graph
+    C->>A: POST /query { query, topK, strategy: "graph" }
     A->>O: POST /api/embeddings { prompt }
     O-->>A: 768d vector
     A->>P: search(vector, limit, filter) using pgvector
@@ -256,7 +290,7 @@ sequenceDiagram
     A->>A: Extract entities from results
     A->>P: expandEntities(entities, depth=2) via relationships table
     P-->>A: Expanded entity graph
-    A-->>C: { results: [...], graph: {...} }
+    A-->>C: { results: [...], graph: {...}, routing: { strategy: "graph", ... } }
     C-->>U: Display results + related entities
 ```
 

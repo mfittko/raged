@@ -1,4 +1,4 @@
-import type { CollectionStats, IngestItem, IngestResponse } from "./types.js";
+import type { CollectionStats, IngestItem, IngestResponse, QueryResponse } from "./types.js";
 
 function authHeaders(token?: string): Record<string, string> {
   const t = token || process.env.RAGED_API_TOKEN || "";
@@ -34,15 +34,18 @@ export async function query(
   topK: number,
   minScore: number,
   filter?: unknown,
+  strategy?: string,
   token?: string
-): Promise<{ results: unknown[] }> {
+): Promise<QueryResponse> {
+  const body: Record<string, unknown> = { collection, query: q, topK, minScore, filter };
+  if (strategy !== undefined) body.strategy = strategy;
   const res = await fetch(`${api.replace(/\/$/, "")}/query`, {
     method: "POST",
     headers: { "content-type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ collection, query: q, topK, minScore, filter }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Query failed: ${res.status} ${await res.text()}`);
-  return await res.json();
+  return await res.json() as QueryResponse;
 }
 
 export async function downloadFirstQueryMatch(

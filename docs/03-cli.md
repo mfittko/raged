@@ -54,7 +54,70 @@ node dist/index.js query --q "<search text>" [options]
 | `--repoId` | _(none)_ | Filter by repository ID |
 | `--pathPrefix` | _(none)_ | Filter by file path prefix |
 | `--lang` | _(none)_ | Filter by language |
+| `--since` | _(none)_ | Temporal lower bound for ingestedAt (today, yesterday, `<N>d`, `<N>y`, or ISO 8601) |
+| `--until` | _(none)_ | Temporal upper bound for ingestedAt (today, yesterday, `<N>d`, `<N>y`, or ISO 8601) |
+| `--filterField` | _(none)_ | Structured filter condition (repeatable). Format: `field:op:value` or `field:op` |
+| `--filterCombine` | `and` | How to join `--filterField` conditions (`and` or `or`) |
+| `--strategy` | _(auto)_ | Force query strategy: `semantic`, `metadata`, `graph`, `hybrid` |
+| `--verbose` | `false` | Always print routing decision and timing for all results |
 | `--token` | _(env `RAGED_API_TOKEN`)_ | Bearer token for auth |
+
+### Strategy-aware output
+
+By default, raged routes each query automatically. You can force a specific strategy with `--strategy` or inspect routing with `--verbose`.
+
+**Routing line** (shown when strategy ≠ `semantic`, or always with `--verbose`):
+```
+routing: <strategy>  (<method>, <durationMs>ms)
+```
+
+**Output per strategy:**
+
+| Strategy | Score | Text shown | Extras |
+|----------|-------|------------|--------|
+| `semantic` | cosine similarity | snippet (280 chars) | routing line only with `--verbose` |
+| `metadata` | `1.00` | `filter match: field=val …` | routing line always shown |
+| `graph` | cosine similarity | snippet | routing line + graph documents section |
+| `hybrid` | blended score | snippet | routing line + graph documents section |
+
+**Semantic result (default):**
+```
+#1  score=0.82
+collection: docs
+source: src/auth.ts
+Handles authentication via JWT tokens...
+```
+
+**Semantic result with `--verbose`:**
+```
+#1  score=0.82
+collection: docs
+source: src/auth.ts
+routing: semantic  (rule, 8ms)
+Handles authentication via JWT tokens...
+```
+
+**Metadata result:**
+```
+#1  score=1.00
+collection: docs
+source: src/auth.ts
+routing: metadata  (rule, 3ms)
+filter match: lang=ts, docType=code
+```
+
+**Graph result:**
+```
+#1  score=0.78
+collection: docs
+source: src/auth.ts
+routing: graph  (rule, 11ms)
+Handles authentication via JWT tokens...
+
+--- graph documents (2) ---
+[G1]  src/auth.ts
+[G2]  src/auth.test.ts
+```
 
 ### ingest
 

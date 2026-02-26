@@ -79,7 +79,7 @@ Ingest items by text or URL fetch.
 
 ### POST /query
 
-Semantic search over chunks.
+Semantic search over chunks with multi-strategy routing.
 
 **Request:**
 ```json
@@ -93,15 +93,20 @@ Semantic search over chunks.
     "lang": "ts",
     "path": "src/"
   },
-  "graphExpand": true
+  "graphExpand": true,
+  "strategy": "semantic"
 }
 ```
 
-- `collection` defaults to `docs`
-- `topK` range: `1..100` (default `8`)
-- `minScore` range: `0..1`; when omitted, threshold is auto-derived from query term count
-- `filter` supports allowed keys mapped to chunk columns (`chunkIndex`, `docType`, `repoId`, `repoUrl`, `path`, `lang`, `itemUrl`, `enrichmentStatus`)
-- `graphExpand` adds related entities/relationships from the graph tables
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `collection` | string | `docs` | Collection to search |
+| `query` | string | _(none)_ | Natural-language query text (required for semantic, graph, hybrid) |
+| `topK` | number | `8` | Number of results (`1..100`) |
+| `minScore` | number | _(auto)_ | Minimum cosine similarity (`0..1`); auto-derived from query term count when omitted |
+| `filter` | object | _(none)_ | Allowed keys mapped to chunk columns (`chunkIndex`, `docType`, `repoId`, `repoUrl`, `path`, `lang`, `itemUrl`, `enrichmentStatus`) |
+| `graphExpand` | boolean | `false` | Deprecated. Use `strategy: "graph"` instead |
+| `strategy` | enum | _(auto)_ | Force a strategy: `semantic`, `metadata`, `graph`, `hybrid` |
 
 **Response (example):**
 ```json
@@ -133,14 +138,73 @@ Semantic search over chunks.
   ],
   "graph": {
     "entities": [
-      { "name": "AuthService", "type": "class" }
+      { "name": "AuthService", "type": "class", "depth": 0, "isSeed": true }
     ],
     "relationships": [
       { "source": "AuthService", "target": "JWT", "type": "uses" }
-    ]
+    ],
+    "paths": [],
+    "documents": [
+      { "documentId": "abc123", "source": "src/auth.ts", "entityName": "AuthService", "mentionCount": 3 }
+    ],
+    "meta": {
+      "entityCount": 1,
+      "capped": false,
+      "timedOut": false,
+      "warnings": []
+    }
+  },
+  "routing": {
+    "strategy": "semantic",
+    "method": "rule",
+    "confidence": 0.9,
+    "rule": "keyword_match",
+    "durationMs": 12
   }
 }
 ```
+
+#### Response fields
+
+**Top-level envelope:**
+
+| Field | Type | Presence | Description |
+|-------|------|----------|-------------|
+| `ok` | `true` | always | Success indicator |
+| `results` | `QueryResultItem[]` | always | Ranked result items |
+| `graph` | `GraphResult` | when strategy is `graph` or `hybrid` | Entity graph data |
+| `routing` | `RoutingDecision` | always | How the strategy was selected |
+
+**`results[].` per-item fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string/number | `"baseId:chunkIndex"` or arbitrary string |
+| `score` | number (0–1) | Cosine similarity; `1.0` for metadata-only results |
+| `source` | string? | Source URL or path |
+| `text` | string? | Chunk text; absent for metadata-only results |
+| `payload` | object? | Enrichment metadata (unchanged shape) |
+
+**`routing.` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `strategy` | enum | `metadata \| graph \| semantic \| hybrid` |
+| `method` | enum | `explicit \| rule \| llm \| rule_fallback \| default` |
+| `confidence` | 0–1 | Classification confidence |
+| `rule` | string? | Matched rule name |
+| `durationMs` | number | Router wall-clock time (ms) |
+
+**`graph.meta.` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `entityCount` | number | Total entities in the traversal result |
+| `capped` | boolean | Whether the entity cap was reached |
+| `timedOut` | boolean | Whether traversal hit the time limit |
+| `warnings` | string[] | Any non-fatal warnings from graph traversal |
+
+> **Note:** When the router selects `metadata` strategy, `score` is always `1.0` and `text` is absent from result items.
 
 ---
 

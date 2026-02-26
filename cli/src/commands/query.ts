@@ -6,7 +6,7 @@ import fs from "node:fs/promises";
 import { downloadFirstQueryMatch, downloadFirstQueryMatchText, getCollections, query } from "../lib/api-client.js";
 import { getDefaultApiUrl } from "../lib/env.js";
 import { logger } from "../lib/logger.js";
-import type { QueryResult, CliFilterCondition, CliFilterDSL } from "../lib/types.js";
+import type { QueryResultItem, CliFilterCondition, CliFilterDSL, QueryResponse } from "../lib/types.js";
 
 interface QueryOptions {
   q?: string;
@@ -33,6 +33,8 @@ interface QueryOptions {
   until?: string;
   filterField?: string[];
   filterCombine?: string;
+  strategy?: string;
+  verbose?: boolean;
 }
 
 interface QueryPayload {
@@ -54,14 +56,20 @@ interface QueryCommandDeps {
   openTargetFn?: (target: string) => void;
 }
 
-interface RankedQueryResult extends QueryResult {
+interface RankedQueryResult extends QueryResultItem {
+  collection: string;
+  routing?: import("../lib/types.js").RoutingDecision;
+}
+
+/** Per-collection query response including graph and routing data. */
+interface CollectionQueryResponse extends QueryResponse {
   collection: string;
 }
 
 type SummaryLevel = "short" | "medium" | "long";
 
-function getPayloadChecksum(result: QueryResult): string | null {
-  const payload = (result as QueryResult & { payload?: QueryPayload }).payload;
+function getPayloadChecksum(result: QueryResultItem): string | null {
+  const payload = (result as QueryResultItem & { payload?: QueryPayload }).payload;
   if (!payload || typeof payload.payloadChecksum !== "string") {
     return null;
   }
@@ -167,8 +175,8 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function formatSummaryForOutput(result: QueryResult, summaryLevel: SummaryLevel): string | null {
-  const payload = (result as QueryResult & { payload?: QueryPayload }).payload;
+function formatSummaryForOutput(result: QueryResultItem, summaryLevel: SummaryLevel): string | null {
+  const payload = (result as QueryResultItem & { payload?: QueryPayload }).payload;
 
   const summaryCandidates: Array<string | null | undefined> =
     summaryLevel === "short"
@@ -184,8 +192,8 @@ function formatSummaryForOutput(result: QueryResult, summaryLevel: SummaryLevel)
   return normalizeWhitespace(summary);
 }
 
-function formatKeywordsForOutput(result: QueryResult): string[] {
-  const payload = (result as QueryResult & { payload?: QueryPayload }).payload;
+function formatKeywordsForOutput(result: QueryResultItem): string[] {
+  const payload = (result as QueryResultItem & { payload?: QueryPayload }).payload;
   const tier3Keywords = payload?.tier3Meta?.keywords;
   if (Array.isArray(tier3Keywords)) {
     const values = tier3Keywords.map(value => normalizeWhitespace(String(value))).filter(value => value.length > 0);
@@ -412,6 +420,34 @@ function openTarget(target: string): void {
   child.unref();
 }
 
+function formatRoutingLine(routing: import("../lib/types.js").RoutingDecision): string {
+  return `routing: ${routing.strategy}  (${routing.method}, ${routing.durationMs}ms)`;
+}
+
+function formatFilterMatch(effectiveFilter: Record<string, unknown> | import("../lib/types.js").CliFilterDSL | undefined): string {
+  if (!effectiveFilter) return "filter match: (none)";
+
+  const dsl = effectiveFilter as import("../lib/types.js").CliFilterDSL;
+  if (dsl.conditions && Array.isArray(dsl.conditions)) {
+    const pairs = dsl.conditions.map((c: import("../lib/types.js").CliFilterCondition) => {
+      if (c.op === "eq" || c.op === "gte" || c.op === "lte" || c.op === "gt" || c.op === "lt" || c.op === "ne") {
+        return c.op === "eq" ? `${c.field}=${c.value}` : `${c.field} ${c.op} ${c.value}`;
+      }
+      if (c.op === "in" && c.values) return `${c.field} in [${c.values.join(",")}]`;
+      if (c.op === "notIn" && c.values) return `${c.field} notIn [${c.values.join(",")}]`;
+      if ((c.op === "between" || c.op === "notBetween") && c.range) return `${c.field} ${c.op} ${c.range.low},${c.range.high}`;
+      return `${c.field} ${c.op}`;
+    });
+    return `filter match: ${pairs.join(", ")}`;
+  }
+
+  // Legacy key-value filter
+  const kv = Object.entries(effectiveFilter as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${k}=${String(v)}`);
+  return kv.length > 0 ? `filter match: ${kv.join(", ")}` : "filter match: (none)";
+}
+
 export async function cmdQuery(options: QueryOptions, deps: QueryCommandDeps = {}): Promise<void> {
   const api = options.api || getDefaultApiUrl();
   const token = options.token;
@@ -433,6 +469,9 @@ export async function cmdQuery(options: QueryOptions, deps: QueryCommandDeps = {
   const repoId = options.repoId;
   const pathPrefix = options.pathPrefix;
   const lang = options.lang;
+
+  const strategy = options.strategy;
+  const verbose = options.verbose === true;
 
   if (!q) {
     logger.error("Error: --q or --query is required");
@@ -537,13 +576,16 @@ export async function cmdQuery(options: QueryOptions, deps: QueryCommandDeps = {
     effectiveFilter = filter;
   }
 
-  const scopedResults = await Promise.all(
+  const scopedResponses = await Promise.all(
     targetCollections.map(async (collectionName) => {
-      const out = await query(api, collectionName, queryText, topK, minScore, effectiveFilter as Record<string, unknown> | undefined, token);
-      const results = (out?.results ?? []) as QueryResult[];
-      return results.map((item) => ({ ...item, collection: collectionName })) as RankedQueryResult[];
+      const out = await query(api, collectionName, queryText, topK, minScore, effectiveFilter as Record<string, unknown> | undefined, strategy, token);
+      const items = (out?.results ?? []) as QueryResultItem[];
+      const results = items.map((item) => ({ ...item, collection: collectionName, routing: out.routing })) as RankedQueryResult[];
+      return { results, collection: collectionName, routing: out.routing, graph: out.graph } as CollectionQueryResponse & { results: RankedQueryResult[] };
     })
   );
+
+  const scopedResults = scopedResponses.map(r => r.results);
 
   const rankedResults = scopedResults
     .flat()
@@ -565,14 +607,27 @@ export async function cmdQuery(options: QueryOptions, deps: QueryCommandDeps = {
   }
 
   if (!shouldDownload && !shouldDownloadFullText && !shouldOpen) {
+    // Collect graph documents from all collection responses for display after results
+    const allGraphDocuments = scopedResponses.flatMap(resp =>
+      resp.graph?.documents ? resp.graph.documents.map(d => ({ ...d, _collectionStrategy: resp.routing?.strategy })) : []
+    );
+
     results.forEach((r: RankedQueryResult, i: number) => {
+      const resultStrategy = r.routing?.strategy ?? "semantic";
       const snippet = normalizeWhitespace(String(r.text ?? "")).slice(0, 280);
       const summary = summaryLevel ? formatSummaryForOutput(r, summaryLevel) : null;
       const keywords = showKeywords ? formatKeywordsForOutput(r) : [];
       logger.info(`#${i + 1}  score=${r.score}`);
       logger.info(`collection: ${r.collection}`);
       logger.info(`source: ${r.source}`);
-      if (summaryLevel && summary) {
+      // Show routing line for non-semantic strategies, or when --verbose
+      if (r.routing && (resultStrategy !== "semantic" || verbose)) {
+        logger.info(formatRoutingLine(r.routing));
+      }
+      // Per-strategy display
+      if (resultStrategy === "metadata" && r.score === 1.0) {
+        logger.info(formatFilterMatch(effectiveFilter));
+      } else if (summaryLevel && summary) {
         logger.info(`summary: ${summary}`);
       } else if (summaryLevel) {
         logger.info(`snippet: ${snippet}`);
@@ -584,10 +639,19 @@ export async function cmdQuery(options: QueryOptions, deps: QueryCommandDeps = {
       }
       logger.info("");
     });
+
+    // Show graph documents section when graph.documents is present
+    if (allGraphDocuments.length > 0) {
+      logger.info(`--- graph documents (${allGraphDocuments.length}) ---`);
+      allGraphDocuments.forEach((doc, i) => {
+        logger.info(`[G${i + 1}]  ${doc.source}`);
+      });
+    }
     return;
   }
 
   const first = results[0];
+  const firstStrategy = first.routing?.strategy ?? "semantic";
   const firstSummary = summaryLevel ? formatSummaryForOutput(first, summaryLevel) : null;
   const firstKeywords = showKeywords ? formatKeywordsForOutput(first) : [];
   const firstSnippet = normalizeWhitespace(String(first.text ?? "")).slice(0, 280);
@@ -596,7 +660,12 @@ export async function cmdQuery(options: QueryOptions, deps: QueryCommandDeps = {
     logger.info(`#1  score=${first.score}`);
     logger.info(`collection: ${first.collection}`);
     logger.info(`source: ${first.source}`);
-    if (summaryLevel && firstSummary) {
+    if (first.routing && (firstStrategy !== "semantic" || verbose)) {
+      logger.info(formatRoutingLine(first.routing));
+    }
+    if (firstStrategy === "metadata" && first.score === 1.0) {
+      logger.info(formatFilterMatch(effectiveFilter));
+    } else if (summaryLevel && firstSummary) {
       logger.info(`summary: ${firstSummary}`);
     } else if (summaryLevel) {
       logger.info(`snippet: ${firstSnippet}`);
@@ -685,6 +754,8 @@ export function registerQueryCommand(program: Command): void {
     .option("--until <value>", "Temporal upper bound for ingestedAt (today, yesterday, <N>d, <N>y, or ISO 8601)")
     .option("--filterField <f:op:v>", "Structured filter condition (repeatable). Format: field:op:value or field:op", (val, prev: string[]) => [...(prev ?? []), val], [] as string[])
     .option("--filterCombine <and|or>", "How to join --filterField conditions (default: and)")
+    .option("--strategy <name>", "Force query strategy: semantic, metadata, graph, hybrid (default: auto)")
+    .option("--verbose", "Always print routing decision and timing for all results")
     .option("--token <token>", "Bearer token for auth")
     .action((queryText: string[] | undefined, options: QueryOptions) => {
       const positional = Array.isArray(queryText) ? queryText.join(" ").trim() : "";

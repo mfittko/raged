@@ -9,11 +9,78 @@ export interface IngestItem {
   docType?: string;
 }
 
+/** @deprecated Use `QueryResultItem` instead. */
 export interface QueryResult {
   text?: string;
   score: number;
   source: string;
   payload?: Record<string, unknown>;
+}
+
+export interface QueryResultItem {
+  id: string | number;
+  score: number;
+  source?: string;
+  text?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface RoutingDecision {
+  strategy: "metadata" | "graph" | "semantic" | "hybrid";
+  method: "explicit" | "rule" | "llm" | "rule_fallback" | "default";
+  confidence: number;
+  rule?: string;
+  durationMs: number;
+}
+
+export interface GraphMeta {
+  entityCount: number;
+  capped: boolean;
+  timedOut: boolean;
+  warnings: string[];
+}
+
+export interface GraphEntity {
+  name: string;
+  type: string;
+  depth: number;
+  isSeed: boolean;
+  mentionCount?: number;
+  description?: string;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  type: string;
+}
+
+export interface EntityPath {
+  entities: string[];
+  relationships: string[];
+  depth: number;
+}
+
+export interface EntityDocument {
+  documentId: string;
+  source: string;
+  entityName: string;
+  mentionCount: number;
+}
+
+export interface GraphResult {
+  entities: GraphEntity[];
+  relationships: GraphEdge[];
+  paths: EntityPath[];
+  documents?: EntityDocument[];
+  meta: GraphMeta;
+}
+
+export interface QueryResponse {
+  ok: true;
+  results: QueryResultItem[];
+  graph?: GraphResult;
+  routing: RoutingDecision;
 }
 
 export interface CollectionStats {
