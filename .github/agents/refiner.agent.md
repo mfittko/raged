@@ -34,6 +34,10 @@ If critical input is missing, ask concise clarification questions first.
 0. RFC Gate (Architecture/Decision Precondition)
 - Before deep refinement, detect whether foundational decisions are unresolved.
 - Treat unresolved items as RFC blockers when they affect architecture, contracts, migration strategy, sequencing, security/compliance posture, or cross-team interfaces.
+- RFCs must be human-in-the-loop friendly:
+  - Prefer one RFC per decision question (avoid bundling unrelated decisions).
+  - Keep each RFC digestible for a human reviewer (clear problem, options, trade-offs, recommendation, explicit decision request).
+  - Avoid overwhelming wall-of-text RFCs; split large topics into focused RFCs.
 - If RFC blockers exist:
   - Create or reference explicit RFC issue(s) that capture the open questions and decision options.
   - Stop at RFC scope (do not produce full downstream implementation-ready sub-issue breakdown yet).
