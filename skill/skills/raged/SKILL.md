@@ -146,7 +146,7 @@ Combine multiple filters (AND logic) by adding more keys to the `filter` object.
 | `query` | string | **required** | Natural-language search text |
 | `topK` | number | `8` | Number of results to return |
 | `collection` | string | `docs` | Collection to search |
-| `filter` | object | _(none)_ | Key-value filter; allowed keys: `repoId`, `lang`, `path`, `docType`, `enrichmentStatus` |
+| `filter` | object | _(none)_ | Key-value filter. Supported direct keys: `chunkIndex`, `docType`, `repoId`, `repoUrl`, `path`, `lang`, `itemUrl`, `enrichmentStatus`. Also supports DSL form with `conditions` + optional `combine` (`and`/`or`). |
 | `strategy` | enum | _(auto)_ | Force a strategy: `semantic`, `metadata`, `graph`, `hybrid` |
 | `graphExpand` | boolean | `false` | Deprecated. Use `strategy: "graph"` instead |
 
