@@ -178,7 +178,22 @@ Response includes both vector results and extracted/expanded entities:
     ],
     "relationships": [
       { "source": "AuthService", "target": "JWT", "type": "uses" }
-    ]
+    ],
+    "paths": [],
+    "documents": [
+      { "documentId": "abc123", "source": "src/auth.ts", "entityName": "AuthService", "mentionCount": 3 }
+    ],
+    "meta": {
+      "entityCount": 2,
+      "capped": false,
+      "timedOut": false,
+      "warnings": [],
+      "seedEntities": ["abc123"],
+      "seedSource": "results",
+      "maxDepthUsed": 2,
+      "entityCap": 50,
+      "timeLimitMs": 3000
+    }
   },
   "routing": {
     "strategy": "graph",
