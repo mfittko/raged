@@ -22,6 +22,8 @@ export interface RoutingResult {
   confidence: number;
   rule?: string;
   durationMs: number;
+  /** Set to true when LLM filter extraction inferred and applied a FilterDSL. */
+  inferredFilter?: boolean;
 }
 
 export interface RouterRequest {

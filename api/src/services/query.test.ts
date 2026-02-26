@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { query, countQueryTerms, getAutoMinScore } from "./query.js";
 import type { QueryRequest } from "./query.js";
 
@@ -51,6 +51,14 @@ vi.mock("./query-router.js", () => ({
     confidence: 1.0,
     durationMs: 0,
   })),
+}));
+
+// Mock query-filter-parser so existing tests are not affected by filter
+// extraction. Integration tests set ROUTER_FILTER_LLM_ENABLED=true in beforeEach
+// to enable extractor invocation.
+vi.mock("./query-filter-parser.js", () => ({
+  extractStructuredFilter: vi.fn(async () => null),
+  isFilterLlmEnabled: vi.fn(() => process.env.ROUTER_FILTER_LLM_ENABLED === "true"),
 }));
 
 describe("countQueryTerms", () => {
@@ -375,6 +383,141 @@ describe("query service", () => {
         type: "related_to",
       },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LLM filter extraction integration
+// ---------------------------------------------------------------------------
+
+describe("query service — LLM filter extraction integration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ROUTER_FILTER_LLM_ENABLED = "true";
+  });
+
+  afterEach(() => {
+    delete process.env.ROUTER_FILTER_LLM_ENABLED;
+  });
+
+  it("does NOT call filter extractor when explicit filter is provided", async () => {
+    const { extractStructuredFilter } = await import("./query-filter-parser.js");
+
+    const result = await query({
+      query: "typescript files",
+      filter: { docType: "code" },
+    });
+
+    expect(extractStructuredFilter).not.toHaveBeenCalled();
+    expect(result.routing.inferredFilter).toBeUndefined();
+  });
+
+  it("calls filter extractor when no filter and routing is ambiguous (default)", async () => {
+    const { extractStructuredFilter } = await import("./query-filter-parser.js");
+    (extractStructuredFilter as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+    await query({ query: "all invoices from 2023" });
+
+    expect(extractStructuredFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "all invoices from 2023" }),
+    );
+  });
+
+  it("sets routing.inferredFilter=true and applies inferred filter to SQL query", async () => {
+    const { extractStructuredFilter } = await import("./query-filter-parser.js");
+    (extractStructuredFilter as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      conditions: [{ field: "lang", op: "eq", value: "ts" }],
+      combine: "and",
+    });
+
+    const queryMock = vi.fn(async () => ({ rows: [] }));
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    const result = await query({ query: "all typescript files from 2023" });
+
+    expect(result.routing.inferredFilter).toBe(true);
+    const firstCall = queryMock.mock.calls[0] as unknown as unknown[];
+    const sql = String(firstCall[0] ?? "");
+    // inferred lang filter should appear in the SQL
+    expect(sql).toContain("c.lang = $5");
+  });
+
+  it("does NOT set inferredFilter when extractor returns null", async () => {
+    const { extractStructuredFilter } = await import("./query-filter-parser.js");
+    (extractStructuredFilter as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+    const result = await query({ query: "how does authentication work" });
+
+    expect(result.routing.inferredFilter).toBeUndefined();
+  });
+
+  it("preserves existing behavior when extractor returns null (no filter applied)", async () => {
+    const { extractStructuredFilter } = await import("./query-filter-parser.js");
+    (extractStructuredFilter as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+    const queryMock = vi.fn(async () => ({ rows: [] }));
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    const result = await query({ query: "general semantic search" });
+
+    expect(result.ok).toBe(true);
+    expect(result.routing.inferredFilter).toBeUndefined();
+    const firstCall = queryMock.mock.calls[0] as unknown as unknown[];
+    const sql = String(firstCall[0] ?? "");
+    // No extra filter conditions in the WHERE clause
+    expect(sql).not.toContain("$5");
+  });
+
+  // Explicit coverage for issue #130 required example queries
+  it("applies inferred temporal range filter for 'all openai invoices from 2023 and 2024'", async () => {
+    const { extractStructuredFilter } = await import("./query-filter-parser.js");
+    (extractStructuredFilter as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      conditions: [
+        {
+          field: "ingestedAt",
+          op: "between",
+          range: { low: "2023-01-01", high: "2024-12-31" },
+        },
+      ],
+      combine: "and",
+    });
+
+    const queryMock = vi.fn(async () => ({ rows: [] }));
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    const result = await query({ query: "all openai invoices from 2023 and 2024" });
+
+    expect(result.routing.inferredFilter).toBe(true);
+    const firstCall = queryMock.mock.calls[0] as unknown as unknown[];
+    const sql = String(firstCall[0] ?? "");
+    // between on ingestedAt expands to >= low AND <= high
+    expect(sql).toContain("d.ingested_at >= $5 AND d.ingested_at <= $6");
+  });
+
+  it("applies multi-constraint inferred filter for 'python files ingested in 2024'", async () => {
+    const { extractStructuredFilter } = await import("./query-filter-parser.js");
+    (extractStructuredFilter as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      conditions: [
+        { field: "lang", op: "eq", value: "py" },
+        { field: "ingestedAt", op: "gte", value: "2024-01-01" },
+      ],
+      combine: "and",
+    });
+
+    const queryMock = vi.fn(async () => ({ rows: [] }));
+    const { getPool } = await import("../db.js");
+    (getPool as any).mockReturnValueOnce({ query: queryMock });
+
+    const result = await query({ query: "python files ingested in 2024" });
+
+    expect(result.routing.inferredFilter).toBe(true);
+    const firstCall = queryMock.mock.calls[0] as unknown as unknown[];
+    const sql = String(firstCall[0] ?? "");
+    expect(sql).toContain("c.lang = $5");
+    expect(sql).toContain("d.ingested_at >= $6");
   });
 });
 

@@ -9,6 +9,7 @@ import { classifyQuery } from "./query-router.js";
 import type { RoutingResult, QueryStrategy } from "./query-router.js";
 import { queryMetadata } from "./query-metadata.js";
 import { hybridMetadataFlow, hybridGraphFlow } from "./hybrid-strategy.js";
+import { extractStructuredFilter, isFilterLlmEnabled } from "./query-filter-parser.js";
 
 export type { GraphParams, RoutingResult, QueryStrategy };
 
@@ -76,10 +77,33 @@ export async function query(
     strategy: request.strategy,
   });
 
+  // LLM filter extraction: attempt to infer structured FilterDSL from natural
+  // language when no explicit filter was provided and routing is ambiguous.
+  // Only runs when ROUTER_FILTER_LLM_ENABLED=true (default: false).
+  const hasExplicitFilter =
+    request.filter !== undefined && request.filter !== null;
+  const isAmbiguousRouting =
+    routing.method === "default" || routing.method === "rule_fallback";
+  const hasQuery = (request.query?.trim().length ?? 0) > 0;
+
+  let effectiveFilter: FilterDSL | Record<string, unknown> | undefined =
+    request.filter;
+
+  if (!hasExplicitFilter && isAmbiguousRouting && hasQuery && isFilterLlmEnabled()) {
+    const inferredFilter = await extractStructuredFilter({
+      query: request.query as string,
+      strategy: routing.strategy,
+    });
+    if (inferredFilter !== null) {
+      effectiveFilter = inferredFilter;
+      routing.inferredFilter = true;
+    }
+  }
+
   // Metadata-only path (no embedding)
   if (routing.strategy === "metadata") {
     const metaResult = await queryMetadata(
-      { collection: col, topK: request.topK, filter: request.filter },
+      { collection: col, topK: request.topK, filter: effectiveFilter },
       col,
     );
     return { ...metaResult, routing };
@@ -99,7 +123,7 @@ export async function query(
   if (routing.strategy === "hybrid") {
     const topK = request.topK ?? 8;
     const minScore = request.minScore ?? getAutoMinScore(queryText);
-    const hasFilter = request.filter !== undefined && request.filter !== null;
+    const hasFilter = effectiveFilter !== undefined && effectiveFilter !== null;
     const hasGraphExpand = (request.graphExpand === true) || (request.graph !== undefined);
 
     if (hasGraphExpand || !hasFilter) {
@@ -117,7 +141,7 @@ export async function query(
         query: queryText,
         topK,
         minScore,
-        filter: request.filter,
+        filter: effectiveFilter,
       });
       return { ...hybridResult, routing };
     }
@@ -133,7 +157,7 @@ export async function query(
   const maxDistance = 1 - minScore;
 
   // Translate filter to Postgres WHERE clause (offset by 4 for base params: $1=collection, $2=vector, $3=topK, $4=maxDistance)
-  const { sql: filterSql, params: filterParams } = translateFilter(request.filter, 4);
+  const { sql: filterSql, params: filterParams } = translateFilter(effectiveFilter, 4);
 
   // Build query with pgvector cosine distance
   const pool = getPool();

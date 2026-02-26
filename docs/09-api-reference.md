@@ -197,6 +197,7 @@ Semantic search over chunks with multi-strategy routing.
 | `confidence` | 0–1 | Classification confidence |
 | `rule` | string? | Matched rule name |
 | `durationMs` | number | Router wall-clock time (ms) |
+| `inferredFilter` | boolean? | `true` when LLM filter extraction inferred and applied a FilterDSL from the query text |
 
 **`graph.meta.` fields:**
 
@@ -385,4 +386,32 @@ Used by the enrichment worker:
 - `POST /internal/tasks/recover-stale`
 
 These endpoints are authenticated like all non-`/healthz` routes.
+
+---
+
+## Environment variable reference
+
+Key env vars that affect API behavior (see `.env.example` for full list):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ROUTER_LLM_ENABLED` | `true` | Enable/disable LLM strategy classification fallback |
+| `ROUTER_LLM_MODEL` | `llama3` | Generative model for strategy classification |
+| `ROUTER_LLM_TIMEOUT_MS` | `2000` | Timeout for strategy classifier LLM call |
+| `ROUTER_LLM_CIRCUIT_BREAK_MS` | `30000` | Circuit-breaker cooldown (ms) after 5 failures |
+| `ROUTER_FILTER_LLM_ENABLED` | `false` | Enable LLM filter extraction from natural language queries. Only activates when no explicit `filter` is provided, routing is ambiguous (`method: default` or `rule_fallback`), and the query is non-empty. |
+| `ROUTER_FILTER_LLM_MODEL` | _(provider default)_ | Model for filter extraction (`llama3` for ollama, `gpt-4o-mini` for openai) |
+| `ROUTER_FILTER_LLM_TIMEOUT_MS` | `1500` | Timeout for filter extraction LLM call |
+
+### LLM filter extraction
+
+When `ROUTER_FILTER_LLM_ENABLED=true`, the API will attempt to extract structured `FilterDSL` conditions from natural language queries when:
+
+1. No explicit `filter` is provided in the request
+2. Routing is ambiguous (`method: default` or `method: rule_fallback`)
+3. The query is non-empty
+
+If extraction succeeds, the inferred filter is applied to the query and `routing.inferredFilter: true` is set in the response. If extraction fails, times out, or produces invalid output, the existing behavior is unchanged — no error is returned to the caller.
+
+**Security:** All LLM output is validated through `translateFilter` before use. Only known fields and operators are accepted; unknown output is discarded.
 
