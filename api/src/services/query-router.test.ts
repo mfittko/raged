@@ -258,6 +258,23 @@ describe("classifyQuery — LLM fallback", () => {
     expect(result.strategy).toBe("graph");
     expect(result.confidence).toBe(0.9);
   });
+
+  it("accepts semantic strategy returned by LLM on low-confidence entity_pattern path", async () => {
+    vi.stubEnv("ROUTER_LLM_ENABLED", "true");
+    vi.stubEnv("OLLAMA_URL", "http://localhost:11434");
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ response: '{"strategy":"semantic","confidence":0.8}' }),
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await classifyQuery({ query: "who is AuthService" });
+    expect(result.method).toBe("llm");
+    expect(result.strategy).toBe("semantic");
+    expect(result.confidence).toBe(0.8);
+    expect(result.rule).toBe("entity_pattern");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -336,6 +353,26 @@ describe("classifyQuery — OpenAI provider", () => {
     const firstCall = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(firstCall[1].body)) as { model: string };
     expect(body.model).toBe("gpt-4o-mini");
+  });
+
+  it("accepts semantic strategy from OpenAI chat-completions on low-confidence entity_pattern path", async () => {
+    vi.stubEnv("ROUTER_LLM_ENABLED", "true");
+    vi.stubEnv("EMBED_PROVIDER", "openai");
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: '{"strategy":"semantic","confidence":0.8}' } }],
+      }),
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await classifyQuery({ query: "who is AuthService" });
+    expect(result.method).toBe("llm");
+    expect(result.strategy).toBe("semantic");
+    expect(result.confidence).toBe(0.8);
+    expect(result.rule).toBe("entity_pattern");
   });
 });
 
