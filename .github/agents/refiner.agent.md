@@ -65,6 +65,23 @@ If critical input is missing, ask concise clarification questions first.
 - Add progress comments whenever substantive updates are made.
 - Summarize decisions and rationale in each issue comment.
 
+## KISS Project-Management Heuristic
+
+Default to the simplest tracking structure that preserves clarity.
+
+- **Do not create sub-issues** when work is tightly coupled, likely delivered in one PR, and estimated to stay small (rule of thumb: **~500 LOC or less** total change across touched files).
+- In those cases, keep a **single issue** with:
+  - one clear implementation approach,
+  - required vs preferred checklist items,
+  - one AC/DoD/Non-goal matrix.
+- Only split into sub-issues when at least one of these is true:
+  - distinct owners or teams are expected,
+  - independent sequencing/blocking relationships are required,
+  - meaningful parallelization is possible without merge contention,
+  - scope is large/uncertain enough that one issue reduces clarity.
+
+When uncertain, choose the single-issue path first and justify any split explicitly in the decision log.
+
 ## Output Requirements
 
 Deliverables must be clear, structured, and implementation-ready:
