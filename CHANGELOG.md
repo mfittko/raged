@@ -6,6 +6,18 @@ The format is based on [Common Changelog](https://common-changelog.org/).
 
 ---
 
+## February 26, 2026
+
+### Added
+
+- **Hybrid Strategy Flows** ([#121](https://github.com/mfittko/RAGed/pull/121)): Added `hybrid-strategy.ts` implementing metadata→semantic and graph→semantic rerank paths that produce a single topK-bounded result list, replacing the prior stubbed hybrid flow.
+
+### Changed
+
+- **Flow Discriminator Update** ([#121](https://github.com/mfittko/RAGed/pull/121)): `query.ts` now selects the appropriate hybrid strategy based on the presence of filters instead of the deprecated `graphExpand` flag, ensuring router-emitted hybrid requests without filters still run the graph-aware rerank.
+- **Scoped Graph Retrieval** ([#121](https://github.com/mfittko/RAGed/pull/121)): `GraphBackend.getEntityDocuments` and `SqlGraphBackend` now accept a collection guard, and the graph rerank enforces the same collection constraint at the SQL level while applying tuned blending constants for secure, normalized scoring and deduplication.
+
+
 
 
 ## February 25, 2026
