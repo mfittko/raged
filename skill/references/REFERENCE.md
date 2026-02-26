@@ -12,7 +12,7 @@ No authentication required.
 
 ### POST /ingest
 
-Chunks text, embeds via Ollama, upserts to Qdrant.
+Chunks text, embeds via Ollama, upserts to Postgres with pgvector.
 
 **Headers:**
 - `Content-Type: application/json`
@@ -34,7 +34,7 @@ Chunks text, embeds via Ollama, upserts to Qdrant.
 ```
 
 **Chunking:** Text is split into ~1800-character chunks on line boundaries.
-Each chunk becomes a separate Qdrant point with ID `<baseId>:<chunkIndex>`.
+Each chunk becomes a separate record with ID `<baseId>:<chunkIndex>`.
 
 **Stored payload per chunk:**
 ```json
@@ -65,12 +65,11 @@ Embeds query text, performs vector similarity search.
   "query": "search text",
   "topK": 8,
   "filter": {
-    "must": [
-      {"key": "repoId", "match": {"value": "my-repo"}},
-      {"key": "lang", "match": {"value": "ts"}},
-      {"key": "path", "match": {"text": "src/"}}
-    ]
-  }
+    "repoId": "my-repo",
+    "lang": "ts",
+    "path": "src/"
+  },
+  "strategy": "semantic"
 }
 ```
 
@@ -86,16 +85,24 @@ Embeds query text, performs vector similarity search.
       "text": "chunk content...",
       "payload": {}
     }
-  ]
+  ],
+  "routing": {
+    "strategy": "semantic",
+    "method": "rule",
+    "confidence": 0.9,
+    "durationMs": 12
+  }
 }
 ```
+
+> **Note:** When the router selects `metadata` strategy, `score` is always `1.0`. Result items may include a `text` field, but clients must not rely on its absence.
 
 ## Infrastructure
 
 | Service | Default URL | Purpose |
 |---------|------------|---------|
 | raged API | `http://localhost:8080` | HTTP gateway |
-| Qdrant | `http://localhost:6333` | Vector database |
+| Postgres | `localhost:5432` | Vector database (pgvector) |
 | Ollama | `http://localhost:11434` | Embedding model |
 
 **Embedding model:** `nomic-embed-text` (768 dimensions, cosine distance)
@@ -104,11 +111,9 @@ Embeds query text, performs vector similarity search.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `QDRANT_URL` | `http://qdrant:6333` | Qdrant connection |
+| `DATABASE_URL` | _(required)_ | Postgres connection string (e.g. `postgresql://raged:raged@localhost:5432/raged`) |
 | `OLLAMA_URL` | `http://ollama:11434` | Ollama connection |
-| `QDRANT_COLLECTION` | `docs` | Default collection |
 | `VECTOR_SIZE` | `768` | Embedding dimensions |
-| `DISTANCE` | `Cosine` | Similarity metric |
 | `EMBED_MODEL` | `nomic-embed-text` | Ollama model name |
 | `PORT` | `8080` | API listen port |
 | `RAGED_API_TOKEN` | _(empty)_ | Bearer token (empty = auth disabled) |

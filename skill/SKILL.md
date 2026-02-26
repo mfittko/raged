@@ -27,7 +27,7 @@ metadata:
 
 Store any content and retrieve it via natural-language queries, enriched with metadata extraction and knowledge graph relationships.
 
-raged chunks text, embeds it with a local model (Ollama + nomic-embed-text), stores vectors in Qdrant, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds a Neo4j knowledge graph for entity-aware retrieval.
+raged chunks text, embeds it with a local model (Ollama + nomic-embed-text), stores vectors in Postgres with pgvector, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds a knowledge graph stored in Postgres for entity-aware retrieval.
 
 Content types: source code, markdown docs, blog articles, email threads, PDFs, images, YouTube transcripts, meeting notes, Slack exports, or any text.
 
@@ -56,8 +56,8 @@ node scripts/check-connection.mjs "$RAGED_URL"
 If the health check fails, remind the user to start the stack:
 
 ```bash
-docker compose up -d   # base stack (Qdrant, Ollama, API)
-docker compose --profile enrichment up -d   # full stack with Redis, Neo4j, worker
+docker compose up -d   # base stack (Postgres, Ollama, API)
+docker compose --profile enrichment up -d   # full stack with enrichment worker
 ```
 
 ## Querying the Knowledge Base
@@ -267,7 +267,7 @@ Results are ordered by similarity score (highest first). `score` ranges 0.0–1.
 
 ## Ingesting Content
 
-Ingest any text into the knowledge base. raged chunks it, embeds each chunk, and stores vectors in Qdrant.
+Ingest any text into the knowledge base. raged chunks it, embeds each chunk, and stores vectors in Postgres with pgvector.
 
 ### Via the API (any text content)
 
@@ -317,7 +317,7 @@ node dist/index.js index \
 |------|------|---------|-------------|
 | `--repo`, `-r` | string | **required** | Git URL to clone |
 | `--api` | string | `http://localhost:8080` | raged API URL |
-| `--collection` | string | `docs` | Target Qdrant collection |
+| `--collection` | string | `docs` | Target collection |
 | `--branch` | string | _(default)_ | Branch to clone |
 | `--repoId` | string | _(repo URL)_ | Stable identifier for the repo |
 | `--token` | string | _(from env)_ | Bearer token |
@@ -366,7 +366,7 @@ Supported file types: text, code, PDFs (extracted text), images (base64 + EXIF m
 
 ## Enrichment
 
-When enrichment is enabled (Redis + Neo4j + worker running), raged performs async metadata extraction:
+When enrichment is enabled (enrichment worker running), raged performs async metadata extraction:
 
 - **Tier-1** (sync): Heuristic/AST/EXIF extraction during ingest
 - **Tier-2** (async): spaCy NER, keyword extraction, language detection
@@ -439,7 +439,7 @@ node dist/index.js enrich --force \
 
 ## Knowledge Graph
 
-When Neo4j is enabled, raged builds a knowledge graph of entities and relationships extracted from documents.
+When enrichment is enabled, raged builds a knowledge graph of entities and relationships extracted from documents, stored in Postgres.
 
 ### Query Entity
 

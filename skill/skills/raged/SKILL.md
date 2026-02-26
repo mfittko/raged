@@ -27,7 +27,7 @@ metadata:
 
 Store any content and retrieve it via natural-language queries, enriched with metadata extraction and knowledge graph relationships.
 
-raged chunks text, embeds it with a local model (Ollama + nomic-embed-text), stores vectors in Qdrant, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds a Neo4j knowledge graph for entity-aware retrieval.
+raged chunks text, embeds it with a local model (Ollama + nomic-embed-text), stores vectors in Postgres with pgvector, and serves similarity search over an HTTP API. Optionally runs async enrichment (NLP + LLM extraction) and builds a knowledge graph stored in Postgres for entity-aware retrieval.
 
 Content types: source code, markdown docs, blog articles, email threads, PDFs, images, YouTube transcripts, meeting notes, Slack exports, or any text.
 
@@ -56,8 +56,8 @@ node scripts/check-connection.mjs "$RAGED_URL"
 If the health check fails, remind the user to start the stack:
 
 ```bash
-docker compose up -d   # base stack (Qdrant, Ollama, API)
-docker compose --profile enrichment up -d   # full stack with Redis, Neo4j, worker
+docker compose up -d   # base stack (Postgres, Ollama, API)
+docker compose --profile enrichment up -d   # full stack with enrichment worker
 ```
 
 ## Querying the Knowledge Base
@@ -102,9 +102,7 @@ curl -s -X POST "$RAGED_URL/query" \
     "query": "error handling",
     "topK": 5,
     "filter": {
-      "must": [
-        {"key": "repoId", "match": {"value": "my-repo"}}
-      ]
+      "repoId": "my-repo"
     }
   }' | jq '.results[] | {score, source, text: (.text | .[0:200])}'
 ```
@@ -119,9 +117,7 @@ curl -s -X POST "$RAGED_URL/query" \
     "query": "database connection",
     "topK": 5,
     "filter": {
-      "must": [
-        {"key": "lang", "match": {"value": "ts"}}
-      ]
+      "lang": "ts"
     }
   }' | jq '.results[] | {score, source, text: (.text | .[0:200])}'
 ```
@@ -136,14 +132,12 @@ curl -s -X POST "$RAGED_URL/query" \
     "query": "route handler",
     "topK": 5,
     "filter": {
-      "must": [
-        {"key": "path", "match": {"text": "src/api/"}}
-      ]
+      "path": "src/api/"
     }
   }' | jq '.results[] | {score, source, text: (.text | .[0:200])}'
 ```
 
-Combine multiple filters (AND logic) by adding entries to the `must` array.
+Combine multiple filters (AND logic) by adding more keys to the `filter` object.
 
 ### Query Parameters
 
@@ -151,13 +145,14 @@ Combine multiple filters (AND logic) by adding entries to the `must` array.
 |-------|------|---------|-------------|
 | `query` | string | **required** | Natural-language search text |
 | `topK` | number | `8` | Number of results to return |
-| `collection` | string | `docs` | Qdrant collection to search |
-| `filter` | object | _(none)_ | Qdrant filter with `must` array |
-| `graphExpand` | boolean | `false` | Enable graph-based entity expansion (requires Neo4j) |
+| `collection` | string | `docs` | Collection to search |
+| `filter` | object | _(none)_ | Key-value filter. Supported direct keys: `chunkIndex`, `docType`, `repoId`, `repoUrl`, `path`, `lang`, `itemUrl`, `enrichmentStatus`. Also supports DSL form with `conditions` + optional `combine` (`and`/`or`). |
+| `strategy` | enum | _(auto)_ | Force a strategy: `semantic`, `metadata`, `graph`, `hybrid` |
+| `graphExpand` | boolean | `false` | Deprecated. Use `strategy: "graph"` instead |
 
 ### Query with Graph Expansion
 
-When Neo4j is enabled, queries can expand results to include related entities from the knowledge graph:
+Use `strategy: "graph"` to expand results with related entities from the knowledge graph:
 
 ```bash
 curl -s -X POST "$RAGED_URL/query" \
@@ -166,7 +161,7 @@ curl -s -X POST "$RAGED_URL/query" \
   -d '{
     "query": "authentication flow",
     "topK": 5,
-    "graphExpand": true
+    "strategy": "graph"
   }' | jq .
 ```
 
@@ -178,21 +173,46 @@ Response includes both vector results and extracted/expanded entities:
   "results": [ /* vector search results */ ],
   "graph": {
     "entities": [
-      { "name": "AuthService", "type": "class" },
-      { "name": "JWT", "type": "library" }
+      { "name": "AuthService", "type": "class", "depth": 0, "isSeed": true },
+      { "name": "JWT", "type": "library", "depth": 1, "isSeed": false }
     ],
-    "relationships": []
+    "relationships": [
+      { "source": "AuthService", "target": "JWT", "type": "uses" }
+    ],
+    "paths": [],
+    "documents": [
+      { "documentId": "abc123", "source": "src/auth.ts", "entityName": "AuthService", "mentionCount": 3 }
+    ],
+    "meta": {
+      "entityCount": 2,
+      "capped": false,
+      "timedOut": false,
+      "warnings": [],
+      "seedEntities": ["abc123"],
+      "seedSource": "results",
+      "maxDepthUsed": 2,
+      "entityCap": 50,
+      "timeLimitMs": 3000
+    }
+  },
+  "routing": {
+    "strategy": "graph",
+    "method": "explicit",
+    "confidence": 1.0,
+    "durationMs": 5
   }
 }
 ```
 
 ### Filter Keys
 
-| Key | Match Type | Example |
+| Key | Match Type | Example value |
 |-----|-----------|---------|
-| `repoId` | exact value | `{"key":"repoId","match":{"value":"my-repo"}}` |
-| `lang` | exact value | `{"key":"lang","match":{"value":"ts"}}` |
-| `path` | text prefix | `{"key":"path","match":{"text":"src/"}}` |
+| `repoId` | exact value | `"my-repo"` |
+| `lang` | exact value | `"ts"` |
+| `path` | prefix match | `"src/"` |
+| `docType` | exact value | `"code"` |
+| `enrichmentStatus` | exact value | `"enriched"` |
 
 ### Response Shape
 
@@ -207,15 +227,21 @@ Response includes both vector results and extracted/expanded entities:
       "text": "chunk content...",
       "payload": { "repoId": "...", "lang": "ts", "path": "src/auth.ts" }
     }
-  ]
+  ],
+  "routing": {
+    "strategy": "semantic",
+    "method": "rule",
+    "confidence": 0.9,
+    "durationMs": 12
+  }
 }
 ```
 
-Results are ordered by similarity score (highest first). `score` ranges 0.0–1.0.
+Results are ordered by similarity score (highest first). `score` ranges 0.0–1.0. For `metadata` strategy, `score` is always `1.0` and `text` may or may not be present — clients must not rely on its absence.
 
 ## Ingesting Content
 
-Ingest any text into the knowledge base. raged chunks it, embeds each chunk, and stores vectors in Qdrant.
+Ingest any text into the knowledge base. raged chunks it, embeds each chunk, and stores vectors in Postgres with pgvector.
 
 ### Via the API (any text content)
 
@@ -265,7 +291,7 @@ node dist/index.js index \
 |------|------|---------|-------------|
 | `--repo`, `-r` | string | **required** | Git URL to clone |
 | `--api` | string | `http://localhost:8080` | raged API URL |
-| `--collection` | string | `docs` | Target Qdrant collection |
+| `--collection` | string | `docs` | Target collection |
 | `--branch` | string | _(default)_ | Branch to clone |
 | `--repoId` | string | _(repo URL)_ | Stable identifier for the repo |
 | `--token` | string | _(from env)_ | Bearer token |
@@ -314,7 +340,7 @@ Supported file types: text, code, PDFs (extracted text), images (base64 + EXIF m
 
 ## Enrichment
 
-When enrichment is enabled (Redis + Neo4j + worker running), raged performs async metadata extraction:
+When enrichment is enabled (worker running), raged performs async metadata extraction:
 
 - **Tier-1** (sync): Heuristic/AST/EXIF extraction during ingest
 - **Tier-2** (async): spaCy NER, keyword extraction, language detection
@@ -387,7 +413,7 @@ node dist/index.js enrich --force \
 
 ## Knowledge Graph
 
-When Neo4j is enabled, raged builds a knowledge graph of entities and relationships extracted from documents.
+raged builds a knowledge graph of entities and relationships extracted from documents.
 
 ### Query Entity
 
